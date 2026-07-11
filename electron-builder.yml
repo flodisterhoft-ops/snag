@@ -25,6 +25,7 @@ win:
     - target: portable
   artifactName: ${productName}-${version}-${arch}.${ext}
 nsis:
+  artifactName: ${productName}-Setup-${version}.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

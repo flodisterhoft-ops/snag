@@ -1,97 +1,148 @@
+<div align="center">
+
+<img src="docs/logo.png" width="110" alt="Snag logo" />
+
 # Snag
 
-A simple, polished desktop app to download video & audio from YouTube and 1000+ other
-sites. Paste a link, pick exactly what you want — any video quality, any audio language,
-or audio-only in MP3/M4A/Opus/WAV/FLAC — choose a folder, and go. Powered by
-[yt-dlp](https://github.com/yt-dlp/yt-dlp) and [ffmpeg](https://ffmpeg.org/).
+**Paste a link. Pick your quality. Done.**
 
-## Features
+A fast, beautiful video & audio downloader for Windows — powered by
+[yt-dlp](https://github.com/yt-dlp/yt-dlp), works with YouTube and 1000+ other sites.
 
-- **Paste & analyze** — paste a link (or one-click the clipboard auto-detect) and see
-  every available format.
-- **Video** — full quality table (2160p → 144p, fps, codec, container, estimated size),
-  choose MP4 / MKV / WebM.
-- **Audio** — pick the audio language on multi-track videos, extract to MP3, M4A, Opus,
-  WAV, FLAC, or keep the original.
-- **Subtitles** — download or embed captions in any available language.
-- **Queue** — line up several downloads; run 1–4 in parallel; live progress, speed, ETA,
-  cancel / retry / open-file / show-in-folder.
-- **Speed control both ways** — a Connection-boost setting (Normal / Fast / Turbo / Max
-  parallel connections per download) to saturate fast internet lines, plus a bandwidth
-  cap when you want downloads to stay polite.
-- **Settings** — default folder, speed controls, filename pattern, format defaults,
-  cover-art & metadata embedding, and a one-click yt-dlp updater.
-- **Desktop notifications** when a download finishes (click to open the folder).
-- **Browser handoff** — a [Chrome companion extension](extension/README.md) puts a
-  download button on videos and in right-click menus; one click opens Snag's quick
-  dialog via a `snag://` link with the video already analyzed. Snag can stay in the
-  tray so downloads keep running with every window closed.
+[![Latest release](https://img.shields.io/github/v/release/flodisterhoft-ops/snag?color=c6f24d&label=download)](https://github.com/flodisterhoft-ops/snag/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/flodisterhoft-ops/snag/total?color=c6f24d)](https://github.com/flodisterhoft-ops/snag/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)
 
-## Download engines
+[**⬇ Download the latest release**](https://github.com/flodisterhoft-ops/snag/releases/latest)
+&nbsp;·&nbsp;
+[Browser extension](#-snag-for-chrome)
+&nbsp;·&nbsp;
+[FAQ](#-faq)
 
-Packaged Snag builds include `yt-dlp` and `ffmpeg`, so installed and portable releases
-work without system-wide tools. Development builds use copies found on `PATH`. To install
-those locally:
+<a href="https://www.buymeacoffee.com/flodisterhoft"><img src="https://img.shields.io/badge/☕%20Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy Me A Coffee"></a>
+
+<br/>
+
+<img src="docs/home.png" width="850" alt="Snag — analyze a video and pick any quality" />
+
+</div>
+
+---
+
+## ✨ Why Snag?
+
+- **Every quality, every format.** Full quality table from 4K60 down to 144p with codec,
+  container, and size — or audio-only as MP3, M4A, Opus, WAV, FLAC.
+- **One click from Chrome.** A little download button floats on every video; click it and
+  Snag's quick dialog pops up with the video already analyzed.
+- **Genuinely fast.** Up to 16 parallel connections per download, a one-click
+  *Maximum speed* preset, live speed in MB/s **and** Mbps.
+- **Multi-language audio & subtitles.** Pick the audio track on multi-language videos;
+  download or embed captions.
+- **Playlists.** Grab a single video or the whole playlist into its own folder.
+- **Stays out of your way.** Runs in the tray, download queue with pause/cancel/retry,
+  desktop notification when done.
+- **No ads, no accounts, no telemetry.** 100% local, open source, MIT licensed.
+
+<div align="center">
+<img src="docs/queue.png" width="850" alt="Download queue with live progress" />
+</div>
+
+## 📦 Install
+
+1. Grab the **Setup installer** (recommended — enables the browser handoff) or the
+   **portable exe** from the
+   [latest release](https://github.com/flodisterhoft-ops/snag/releases/latest).
+2. Run it. That's it — **yt-dlp and ffmpeg are bundled**, nothing else to install.
+
+> **Windows SmartScreen may warn you** ("Windows protected your PC") because Snag is a
+> free open-source app without a paid code-signing certificate. Click
+> **More info → Run anyway**. The source code is all here if you want to check or build
+> it yourself.
+
+## 🧩 Snag for Chrome
+
+The companion extension puts Snag one click away on any video site:
+
+- A **translucent download button** in the corner of every video
+- **Right-click menus** — download this page, this video, or any link
+- A **toolbar button** to send the current tab to Snag
+
+Click any of them and the quick dialog appears — video analyzed, quality picker ready:
+
+<div align="center">
+<img src="docs/quick.png" width="420" alt="Quick download dialog opened from the browser" />
+</div>
+
+**Install (one-time, ~30 seconds):** Chrome only auto-installs store extensions, so this
+one loads in developer mode:
+
+1. In Snag: **Settings → Browser integration → Install extension files** (copies the
+   extension to a stable folder and shows these same steps).
+2. Open `chrome://extensions`, switch on **Developer mode** (top-right).
+3. Click **Load unpacked** and pick the copied folder.
+4. First click: Chrome asks *"Open Snag?"* — tick **Always allow**.
+
+Works the same in Edge and Brave. Full details in [extension/README.md](extension/README.md).
+
+## ⚙️ Make it yours
+
+<div align="center">
+<img src="docs/settings.png" width="850" alt="Settings — speed presets, formats, browser integration" />
+</div>
+
+Default folder and filename pattern, parallel downloads, connection boost, bandwidth cap,
+preferred containers/formats, subtitle defaults, tray behavior, quick dialog vs. full app
+handoff — plus a built-in updater that checks for new Snag and yt-dlp releases about once
+a day and prompts you (update now or later, your call).
+
+## 🔨 Build from source
 
 ```powershell
-winget install yt-dlp
-winget install ffmpeg
-```
-
-You can also point Snag at a specific `yt-dlp.exe` in Settings → Engine. The Update button
-maintains a writable per-user copy instead of attempting to modify Program Files.
-
-## Develop
-
-```powershell
+git clone https://github.com/flodisterhoft-ops/snag.git
+cd snag
 npm install
 npm run dev        # hot-reloading dev app
-npm run typecheck  # TypeScript check
-npm run build      # compile main + preload + renderer to ./out
-npm test           # run focused queue, arguments, and formatting tests
+npm test           # unit tests
+npm run dist       # installer + portable exe in ./dist
 ```
 
-## Run it now (no install needed)
+Dev builds use `yt-dlp`/`ffmpeg` from your PATH (`winget install yt-dlp ffmpeg`);
+packaged builds bundle both. `npm run dist` needs Windows **Developer Mode** (or an
+admin terminal) once, so electron-builder can extract its toolchain.
 
-A ready-to-run build is in `dist/win-unpacked/` — just double-click **`Snag.exe`**.
-Portable and installer artifacts are produced under `dist/`; neither needs separate
-yt-dlp or ffmpeg installation.
+## ❓ FAQ
 
-## Building the Windows installer (NSIS)
+**Is this legal?**
+Snag is a tool, like a browser's save button. Only download content you have the right to
+save — your own uploads, Creative Commons, public domain, or where the creator allows it.
+Respect each site's terms of service.
 
-```powershell
-npm run dist       # NSIS installer + portable .exe in ./dist
-npm run dist:dir   # unpacked app folder only (faster, used above)
-```
+**Why does SmartScreen/my antivirus flag it?**
+Snag is unsigned (code-signing certificates cost hundreds of dollars a year). The app is
+open source — audit it, build it yourself, or check the release binaries with VirusTotal.
 
-> **One-time setup:** `npm run dist` needs to extract electron-builder's code-signing
-> toolchain, which contains symbolic links. Creating those on Windows requires the
-> "create symbolic links" privilege. If you see
-> *"Cannot create symbolic link … A required privilege is not held by the client"*,
-> do **one** of the following, then re-run `npm run dist`:
-> - Turn on **Settings → Privacy & security → For developers → Developer Mode**, **or**
-> - Run the command from a terminal opened as **Administrator**.
->
-> `npm run dist:dir` (used to produce the portable build above) does **not** need this.
+**A video fails to download?**
+Sites change constantly; yt-dlp updates almost weekly to keep up. Snag will prompt you
+when a yt-dlp update is available — or force it via **Settings → Engine → Update**.
 
-The installer creates desktop and Start-menu shortcuts.
+**Where are playlists saved?**
+In a subfolder named after the playlist, inside your chosen folder.
 
-## Browser extension (Snag for Chrome)
+**Does it work on Mac/Linux?**
+Not yet — Snag is currently Windows-only. The core is Electron, so ports are possible;
+open an issue if you're interested.
 
-The [`extension/`](extension/README.md) folder contains an unpacked Chrome extension:
-a floating download button on videos, a toolbar button, and right-click
-page/video/link menus, all handing the page URL to the desktop app through
-`snag://download` deep links. Install it from Snag via
-**Settings → Browser integration → Install extension files**, then load the copied
-folder with `chrome://extensions` → Developer mode → **Load unpacked**
-(full steps in the extension README). In Settings you can also choose whether the
-handoff opens the compact quick dialog or the full app.
+## ☕ Support
 
-## How it works
+Snag is free and always will be. If it saves you time, a coffee keeps the updates coming:
 
-- **Main process** (`src/main`) locates and spawns `yt-dlp.exe` directly (no wrapper
-  library), parses its JSON metadata and live progress, manages the download queue, and
-  persists settings to a small JSON file in `%APPDATA%`.
-- **Renderer** (`src/renderer`) is a React UI talking to the main process over a typed
-  `contextBridge` preload API (`src/preload`, contract in `src/shared/types.ts`).
-- **No browser data or accounts** — everything runs locally on your PC.
+<a href="https://www.buymeacoffee.com/flodisterhoft"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="45"></a>
+
+## 📄 License
+
+[MIT](LICENSE) — do whatever you like, no warranty.
+Downloads are powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp) and
+[ffmpeg](https://ffmpeg.org/); see [THIRD_PARTY_TOOLS](build/tools/THIRD_PARTY_TOOLS.txt)
+for their licenses.
