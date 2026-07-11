@@ -51,21 +51,28 @@ export function isAudioCodecCompatible(container: VideoContainer, codec: string)
 
 // Renderer-facing compatibility check. Video-only rows do not carry their
 // eventual audio codec, so only validate audio for progressive (muxed) rows.
+// Sources with unknown codecs (X/Twitter's direct MP4 variants) count as
+// compatible when they are already stored in the target container family.
 export function isVideoFormatCompatible(
   container: VideoContainer,
   vcodec: string,
   acodec: string,
-  progressive: boolean
+  progressive: boolean,
+  ext = ''
 ): boolean {
+  if (container === 'mkv') return true
+  if (!vcodec) return isNativeContainerSource(container, ext)
   return (
     isVideoCodecCompatible(container, vcodec) &&
-    (!progressive || isAudioCodecCompatible(container, acodec))
+    (!progressive || !acodec || acodec === 'none' || isAudioCodecCompatible(container, acodec))
   )
 }
 
 /**
  * Pick audio that can be muxed into the selected output without transcoding.
  * Prefer a native source container (M4A for MP4, WebM for WebM), then bitrate.
+ * Unknown audio codecs (X/Twitter HLS renditions) pass when the source is
+ * already in the target container family.
  */
 export function findCompatibleAudioFormat(
   container: VideoContainer,
@@ -73,7 +80,13 @@ export function findCompatibleAudioFormat(
 ): AudioFormat | null {
   return (
     formats
-      .filter((format) => !!format.formatId && isAudioCodecCompatible(container, format.acodec))
+      .filter(
+        (format) =>
+          !!format.formatId &&
+          (format.acodec
+            ? isAudioCodecCompatible(container, format.acodec)
+            : container === 'mkv' || isNativeContainerSource(container, format.ext))
+      )
       .map((format, index) => ({ format, index }))
       .sort((a, b) => {
         const nativeDifference =
@@ -115,8 +128,13 @@ export function filterVideoFormatsForContainer(
   const mergeAudio = findCompatibleAudioFormat(container, audioFormats)
   const compatible = videoFormats.filter(
     (format) =>
-      isVideoFormatCompatible(container, format.vcodec, format.acodec, format.isProgressive) &&
-      (format.isProgressive || !!mergeAudio)
+      isVideoFormatCompatible(
+        container,
+        format.vcodec,
+        format.acodec,
+        format.isProgressive,
+        format.ext
+      ) && (format.isProgressive || !!mergeAudio)
   )
 
   if (container === 'mkv') return compatible

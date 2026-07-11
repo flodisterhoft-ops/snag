@@ -132,28 +132,35 @@ export function buildVideoSelector(
   const audioFilter = `[acodec~='${patterns.audio}']`
   const splitFallback = `bv*${videoFilter}+ba${audioFilter}`
   const progressiveFallback = `b${videoFilter}${audioFilter}`
+  // Sites like X/Twitter report no codecs at all, so every guarded selection
+  // would fail. End the chain with the best generic pick; --remux-video still
+  // normalizes the container whenever the streams allow it.
+  const lastResort = 'bv*+ba/b'
 
-  if (!req.videoFormatId) return `${splitFallback}/${progressiveFallback}`
+  if (!req.videoFormatId) return `${splitFallback}/${progressiveFallback}/${lastResort}`
 
   if (multiAudioIds) {
-    // Every track keeps the codec guard so an ID that cannot be muxed into the
-    // container falls through to the single-audio selection instead of MKV.
+    // Guarded first (an ID that cannot be muxed into the container falls
+    // through to the single-audio selection instead of MKV), then the plain
+    // IDs for unknown-codec sources where the guards cannot match.
     const tracks = multiAudioIds.map((id) => `${id}${audioFilter}`).join('+')
     const exactMulti = `${req.videoFormatId}${videoFilter}+${tracks}`
+    const plainMulti = `${req.videoFormatId}+${multiAudioIds.join('+')}`
     const primary = `${req.videoFormatId}${videoFilter}+${multiAudioIds[0]}${audioFilter}`
-    return `${exactMulti}/${primary}/${splitFallback}/${progressiveFallback}`
+    return `${exactMulti}/${plainMulti}/${primary}/${splitFallback}/${progressiveFallback}/${lastResort}`
   }
 
   if (req.audioFormatId) {
     const exact = `${req.videoFormatId}${videoFilter}+${req.audioFormatId}${audioFilter}`
-    return `${exact}/${splitFallback}/${progressiveFallback}`
+    const plain = `${req.videoFormatId}+${req.audioFormatId}`
+    return `${exact}/${plain}/${splitFallback}/${progressiveFallback}/${lastResort}`
   }
 
   // The selected row may be progressive (needs a compatible audio codec) or
   // video-only (acodec=none). Express both without knowing which one yt-dlp ID is.
   const exactProgressive = `${req.videoFormatId}${videoFilter}${audioFilter}`
   const exactVideoOnly = `${req.videoFormatId}${videoFilter}[acodec=none]`
-  return `${exactProgressive}/${exactVideoOnly}/${splitFallback}/${progressiveFallback}`
+  return `${exactProgressive}/${exactVideoOnly}/${req.videoFormatId}/${splitFallback}/${progressiveFallback}/${lastResort}`
 }
 
 function buildAudioArgs(req: DownloadRequest, settings: Settings, args: string[]): void {

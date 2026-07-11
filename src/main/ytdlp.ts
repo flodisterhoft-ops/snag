@@ -336,7 +336,13 @@ export function cleanYtdlpError(stderr: string): string {
     lines.find((l) => /^ERROR:/i.test(l)) || lines[lines.length - 1] || stderr.trim()
   let msg = errLine.replace(/^ERROR:\s*/i, '').trim()
 
-  if (/Unsupported URL/i.test(msg)) return 'This link is not supported.'
+  if (/Unsupported URL/i.test(msg)) {
+    // The X/Twitter feed and profile pages aren't extractable — the tweet is.
+    if (/Unsupported URL:\s*https?:\/\/(www\.)?(x|twitter)\.com/i.test(msg)) {
+      return 'Open the post itself (click its timestamp) and use that link — the X feed page cannot be downloaded.'
+    }
+    return 'This link is not supported.'
+  }
   if (/is not a valid URL/i.test(msg) || /Invalid URL/i.test(msg))
     return 'That does not look like a valid link.'
   if (/Private video/i.test(msg)) return 'This video is private.'

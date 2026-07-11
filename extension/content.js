@@ -47,8 +47,26 @@
     return parts.length > 2 ? '…\\' + parts.slice(-2).join('\\') : p
   }
 
-  function deepLink() {
-    return 'snag://download?url=' + encodeURIComponent(location.href)
+  function deepLink(url) {
+    return 'snag://download?url=' + encodeURIComponent(url || location.href)
+  }
+
+  // The page URL is not always the video's URL. On X/Twitter the feed itself
+  // is not extractable — resolve the enclosing tweet's permalink instead.
+  function resolveTargetUrl(video) {
+    if (/(^|\.)(x\.com|twitter\.com)$/i.test(HOST)) {
+      const statusRe = /\/([A-Za-z0-9_]+)\/status\/(\d+)/
+      const article = video && video.closest && video.closest('article')
+      if (article) {
+        for (const a of article.querySelectorAll('a[href*="/status/"]')) {
+          const m = (a.getAttribute('href') || '').match(statusRe)
+          if (m) return `https://${HOST}/${m[1]}/status/${m[2]}`
+        }
+      }
+      const m = location.pathname.match(statusRe)
+      if (m) return `https://${HOST}/${m[1]}/status/${m[2]}`
+    }
+    return location.href
   }
 
   function sendMessage(msg) {
@@ -77,8 +95,21 @@
     mkv: /./
   }
 
+  // Unknown codecs (blank strings from X/Twitter) pass when the source file
+  // is already in the container's family — mirrors Snag's own rules.
+  function videoOk(container, f) {
+    if (container === 'mkv') return true
+    if (!f.vcodec) return f.ext === (container === 'mp4' ? 'mp4' : 'webm')
+    return VIDEO_COMPAT[container].test(f.vcodec)
+  }
+  function audioOk(container, f) {
+    if (container === 'mkv') return true
+    if (!f.acodec) return container === 'mp4' ? f.ext === 'm4a' || f.ext === 'mp4' : f.ext === 'webm'
+    return AUDIO_COMPAT[container].test(f.acodec)
+  }
+
   function compatibleAudio(container, group) {
-    const ok = (group.formats || []).filter((f) => AUDIO_COMPAT[container].test(f.acodec || ''))
+    const ok = (group.formats || []).filter((f) => audioOk(container, f))
     ok.sort((a, b) => {
       const nativeA = container === 'mp4' ? a.ext === 'm4a' : a.ext === 'webm'
       const nativeB = container === 'mp4' ? b.ext === 'm4a' : b.ext === 'webm'
@@ -93,8 +124,8 @@
     const rows = []
     for (const container of ['mp4', 'mkv', 'webm']) {
       const candidates = (info.videoFormats || []).filter((f) => {
-        if (!VIDEO_COMPAT[container].test(f.vcodec || '')) return false
-        if (f.isProgressive && !AUDIO_COMPAT[container].test(f.acodec || '')) return false
+        if (!videoOk(container, f)) return false
+        if (f.isProgressive && f.acodec && f.acodec !== 'none' && !AUDIO_COMPAT[container].test(f.acodec)) return false
         return true
       })
       if (!candidates.length) continue
@@ -222,7 +253,7 @@
     host.style.top = top + 'px'
   }
 
-  function openPanel(btn) {
+  function openPanel(btn, video) {
     closePanel(true)
 
     const host = el('div')
@@ -237,7 +268,7 @@
     document.documentElement.appendChild(host)
     positionPanel(host, btn)
 
-    const pageUrl = location.href
+    const pageUrl = resolveTargetUrl(video)
     const state = {
       info: null, defaults: null, kind: 'video',
       rows: [], container: null,
@@ -306,7 +337,7 @@
       c.append(el('strong', null, "Snag isn't running"))
       c.append(el('span', null, 'Start it once and downloads open right here.'))
       const open = el('button', 'btn2 accent2', 'Open Snag')
-      open.addEventListener('click', () => { location.href = deepLink(); closePanel() })
+      open.addEventListener('click', () => { location.href = deepLink(pageUrl); closePanel() })
       c.appendChild(open)
       renderShell('Snag', [c])
     }
@@ -317,7 +348,7 @@
       const retry = el('button', 'btn2', 'Try again')
       retry.addEventListener('click', start)
       const app = el('button', 'btn2', 'Open in Snag app')
-      app.addEventListener('click', () => { location.href = deepLink(); closePanel() })
+      app.addEventListener('click', () => { location.href = deepLink(pageUrl); closePanel() })
       c.append(retry, app)
       renderShell('Snag', [c])
     }
@@ -435,7 +466,7 @@
             const hdr = el('span', 'badge', r.video.dynamicRange)
             b.appendChild(hdr)
           }
-          const sub = el('small', null, r.video.vcodec + (r.tracks.length >= 2 ? ` · ${r.tracks.length} audio tracks` : ''))
+          const sub = el('small', null, (r.video.vcodec || 'original') + (r.tracks.length >= 2 ? ` · ${r.tracks.length} audio tracks` : ''))
           q.append(b, sub)
           const s = el('span', 'rs', (r.approx ? '~' : '') + formatBytes(r.total))
           if (r === smallest && state.rows.length > 1) s.appendChild(el('span', 'tag', 'smallest'))
@@ -564,7 +595,7 @@
 
   // ---------- Floating button (unchanged behavior, new click target) ----------
 
-  function makeButton() {
+  function makeButton(video) {
     const btn = document.createElement('button')
     btn.className = 'snag-dl-btn'
     btn.type = 'button'
@@ -576,7 +607,7 @@
         e.preventDefault()
         e.stopPropagation()
         if (panel) closePanel()
-        else openPanel(btn)
+        else openPanel(btn, video)
       },
       true
     )
@@ -620,7 +651,7 @@
       let btn = buttons.get(video)
       if (eligible(video)) {
         if (!btn) {
-          btn = makeButton()
+          btn = makeButton(video)
           document.documentElement.appendChild(btn)
           buttons.set(video, btn)
         }

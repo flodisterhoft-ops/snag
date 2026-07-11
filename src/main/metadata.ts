@@ -105,24 +105,33 @@ function qualityLabel(f: RawFormat): string {
 }
 
 export function parseVideoFormats(formats: RawFormat[]): VideoFormat[] {
-  const videos = formats.filter((f) => f.vcodec && f.vcodec !== 'none')
+  // Some extractors (X/Twitter's direct MP4 variants, for one) report no
+  // codecs at all: vcodec/acodec are null rather than 'none'. A format with
+  // dimensions is a video regardless of whether the codec is known.
+  const videos = formats.filter(
+    (f) => (f.vcodec && f.vcodec !== 'none') || (!f.vcodec && (f.height || f.width))
+  )
   const mapped: VideoFormat[] = videos.map((f) => {
     const { size, approx } = pickSize(f)
+    const acodecKnown = !!f.acodec && f.acodec !== 'none'
+    const vcodecKnown = !!f.vcodec && f.vcodec !== 'none'
     return {
       formatId: f.format_id,
       ext: f.ext || '',
       height: f.height ?? null,
       width: f.width ?? null,
       fps: f.fps ?? null,
-      vcodec: friendlyVcodec(f.vcodec || ''),
-      acodec: f.acodec && f.acodec !== 'none' ? friendlyAcodec(f.acodec) : 'none',
+      vcodec: vcodecKnown ? friendlyVcodec(f.vcodec || '') : '',
+      acodec: acodecKnown ? friendlyAcodec(f.acodec || '') : 'none',
       tbr: f.tbr ?? null,
       vbr: f.vbr ?? null,
       filesize: size,
       filesizeIsApprox: approx,
       formatNote: f.format_note || '',
       dynamicRange: f.dynamic_range ?? null,
-      isProgressive: !!(f.acodec && f.acodec !== 'none'),
+      // acodec 'none' is an explicit "video only". A fully unknown pair
+      // (direct http MP4s) is in practice a muxed progressive file.
+      isProgressive: acodecKnown || (!vcodecKnown && f.acodec !== 'none'),
       qualityLabel: qualityLabel(f)
     }
   })
@@ -149,8 +158,18 @@ export function parseAudioGroups(
   formats: RawFormat[],
   primaryLanguage: string | null
 ): { groups: AudioLanguageGroup[]; multiLanguage: boolean } {
+  // Audio-only: no video codec and not explicitly audio-less. HLS audio
+  // renditions (X/Twitter) leave acodec blank, so require a bitrate signal
+  // instead of a codec, and never mistake dimensioned or storyboard formats
+  // for audio.
   const audios = formats.filter(
-    (f) => f.acodec && f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none')
+    (f) =>
+      (!f.vcodec || f.vcodec === 'none') &&
+      f.acodec !== 'none' &&
+      !f.height &&
+      !f.width &&
+      f.ext !== 'mhtml' &&
+      (!!f.acodec || (f.abr ?? 0) > 0 || (f.tbr ?? 0) > 0)
   )
 
   // Some supported sites expose only progressive video+audio streams. Keep
