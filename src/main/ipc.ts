@@ -19,6 +19,7 @@ import { installBrowserExtension, getInstalledExtensionPath } from './extension'
 import { applyLaunchAtLogin } from './startup'
 import { isHttpUrl } from './protocol'
 import { checkForUpdates } from './updates'
+import { canAutoUpdate, downloadAppUpdate, installAppUpdate } from './appUpdater'
 import type {
   AnalyzeResult,
   DownloadRequest,
@@ -195,4 +196,10 @@ export function registerIpc(): void {
   handleTrusted('dismissUpdates', async (): Promise<void> => {
     clearCachedUpdates()
   })
+
+  handleTrusted('canAutoUpdate', async (): Promise<boolean> => canAutoUpdate())
+
+  handleTrusted('downloadAppUpdate', async () => downloadAppUpdate())
+
+  handleTrusted('installAppUpdate', async (): Promise<boolean> => installAppUpdate())
 }

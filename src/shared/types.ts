@@ -186,6 +186,13 @@ export interface Settings {
 
 export type UpdateCheckStatus = 'success' | 'partial' | 'error'
 
+export interface AppUpdateProgress {
+  percent: number
+  bytesPerSecond: number
+  transferred: number
+  total: number
+}
+
 // What the update check found. A null slot means up to date only when status is
 // "success"; partial/error preserve the distinction between current and unknown.
 export interface UpdateAvailability {
@@ -245,4 +252,11 @@ export interface Api {
   checkForUpdates: () => Promise<UpdateAvailability>
   dismissUpdates: () => Promise<void>
   onUpdateAvailable: (cb: (u: UpdateAvailability) => void) => () => void
+  // In-app update download & install (installed builds only)
+  canAutoUpdate: () => Promise<boolean>
+  downloadAppUpdate: () => Promise<{ ok: boolean; downloaded?: boolean; error?: string }>
+  installAppUpdate: () => Promise<boolean>
+  onAppUpdateProgress: (cb: (p: AppUpdateProgress) => void) => () => void
+  onAppUpdateDownloaded: (cb: () => void) => () => void
+  onAppUpdateError: (cb: (message: string) => void) => () => void
 }

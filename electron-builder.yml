@@ -35,6 +35,12 @@ protocols:
   - name: Snag deep link
     schemes:
       - snag
+# Embeds resources/app-update.yml so electron-updater knows where releases
+# live. Publishing itself stays manual (gh release create with latest.yml).
+publish:
+  provider: github
+  owner: flodisterhoft-ops
+  repo: snag
 win:
   target:
     - target: nsis

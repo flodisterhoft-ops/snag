@@ -5,7 +5,8 @@ import type {
   Settings,
   ProgressUpdate,
   DownloadJob,
-  UpdateAvailability
+  UpdateAvailability,
+  AppUpdateProgress
 } from '@shared/types'
 
 const api: Api = {
@@ -50,6 +51,24 @@ const api: Api = {
     const listener = (_e: IpcRendererEvent, u: UpdateAvailability): void => cb(u)
     ipcRenderer.on('updateAvailable', listener)
     return () => ipcRenderer.removeListener('updateAvailable', listener)
+  },
+  canAutoUpdate: () => ipcRenderer.invoke('canAutoUpdate'),
+  downloadAppUpdate: () => ipcRenderer.invoke('downloadAppUpdate'),
+  installAppUpdate: () => ipcRenderer.invoke('installAppUpdate'),
+  onAppUpdateProgress: (cb: (p: AppUpdateProgress) => void) => {
+    const listener = (_e: IpcRendererEvent, p: AppUpdateProgress): void => cb(p)
+    ipcRenderer.on('appUpdateProgress', listener)
+    return () => ipcRenderer.removeListener('appUpdateProgress', listener)
+  },
+  onAppUpdateDownloaded: (cb: () => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('appUpdateDownloaded', listener)
+    return () => ipcRenderer.removeListener('appUpdateDownloaded', listener)
+  },
+  onAppUpdateError: (cb: (message: string) => void) => {
+    const listener = (_e: IpcRendererEvent, message: string): void => cb(message)
+    ipcRenderer.on('appUpdateError', listener)
+    return () => ipcRenderer.removeListener('appUpdateError', listener)
   }
 }
 

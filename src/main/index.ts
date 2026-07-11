@@ -121,11 +121,14 @@ if (!gotLock) {
       if (BrowserWindow.getAllWindows().length === 0) ensureMainWindow()
     })
 
-    // Re-evaluate periodically so a tray process left running for days still
-    // performs the next daily check. The initial delay avoids startup work.
+    // Always check shortly after launch (a fresh start deserves fresh info —
+    // the persisted daily throttle otherwise hides releases published right
+    // after the previous check). The hourly re-checks keep the throttle so a
+    // long-running tray process stays polite to the API.
     let updateCheckRunning = false
-    const runAutomaticUpdateCheck = async (): Promise<void> => {
-      if (updateCheckRunning || !shouldAutoCheck()) return
+    const runAutomaticUpdateCheck = async (force: boolean): Promise<void> => {
+      if (updateCheckRunning) return
+      if (force ? !loadSettings().autoCheckUpdates : !shouldAutoCheck()) return
       updateCheckRunning = true
       try {
         const update = await checkForUpdates()
@@ -138,8 +141,8 @@ if (!gotLock) {
         updateCheckRunning = false
       }
     }
-    setTimeout(() => void runAutomaticUpdateCheck(), 5000)
-    setInterval(() => void runAutomaticUpdateCheck(), 60 * 60 * 1000)
+    setTimeout(() => void runAutomaticUpdateCheck(true), 5000)
+    setInterval(() => void runAutomaticUpdateCheck(false), 60 * 60 * 1000)
   })
 
   app.on('window-all-closed', () => {
