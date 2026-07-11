@@ -325,16 +325,6 @@ export function SettingsScreen(): JSX.Element {
             <Icon name="chevron" size={16} />
           </div>
         </Row>
-        <Row
-          title="Remember last choices"
-          desc="Preselect the media type you used last time"
-        >
-          <Toggle
-            checked={form.rememberLastChoices}
-            onChange={(v) => set({ rememberLastChoices: v })}
-            label="Remember last choices"
-          />
-        </Row>
       </Section>
 
       <Section title="Audio languages">

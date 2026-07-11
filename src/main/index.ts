@@ -16,6 +16,7 @@ import { downloadManager } from './downloader'
 import { checkForUpdates, shouldAutoCheck } from './updates'
 import { refreshInstalledBrowserExtension } from './extension'
 import { applyLaunchAtLogin, TRAY_START_FLAG } from './startup'
+import { startLocalApi } from './localApi'
 
 // Windows: needed for notifications to show the app identity/name correctly.
 if (process.platform === 'win32') {
@@ -82,6 +83,7 @@ if (!gotLock) {
     registerIpc()
     createTray(() => ensureMainWindow())
     setWindowIdleProbe(maybeQuitWhenIdle)
+    void startLocalApi()
 
     // Heal the login-item registration (a moved portable exe changes paths).
     applyLaunchAtLogin(loadSettings().launchAtLogin)

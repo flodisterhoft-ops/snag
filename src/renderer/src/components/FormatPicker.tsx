@@ -66,13 +66,9 @@ function exactResolution(format: VideoFormat): string | undefined {
   return format.width && format.height ? `${format.width}×${format.height}` : undefined
 }
 
-// Which language groups a fresh analysis should preselect: every configured
-// language that the video actually carries, else just the default track.
-export function initialLanguageKeys(info: MediaInfo, settings: Settings): string[] {
-  const defaultGroup = info.audioGroups.find((g) => g.isDefault) ?? info.audioGroups[0]
-  const defaultKeys = defaultGroup ? [groupKey(defaultGroup.language)] : []
-  if (!settings.multiAudio.enabled || !info.hasMultipleAudioLanguages) return defaultKeys
-
+// The user's favorite languages that this video actually carries, in the
+// favorites' own ranking (e.g. English before German).
+export function matchedFavoriteKeys(info: MediaInfo, settings: Settings): string[] {
   const wanted = settings.multiAudio.languages.map(baseLang).filter(Boolean)
   const matched: string[] = []
   for (const base of wanted) {
@@ -81,7 +77,20 @@ export function initialLanguageKeys(info: MediaInfo, settings: Settings): string
       matched.push(groupKey(group.language))
     }
   }
-  return matched.length > 0 ? matched : defaultKeys
+  return matched
+}
+
+// Which language groups a fresh analysis should preselect: all matched
+// favorites when multi-audio is on, the top favorite otherwise, else the
+// video's default track.
+export function initialLanguageKeys(info: MediaInfo, settings: Settings): string[] {
+  const defaultGroup = info.audioGroups.find((g) => g.isDefault) ?? info.audioGroups[0]
+  const defaultKeys = defaultGroup ? [groupKey(defaultGroup.language)] : []
+  if (!info.hasMultipleAudioLanguages) return defaultKeys
+
+  const matched = matchedFavoriteKeys(info, settings)
+  if (matched.length === 0) return defaultKeys
+  return settings.multiAudio.enabled ? matched : [matched[0]]
 }
 
 interface BestRow {
@@ -151,24 +160,20 @@ export function FormatPicker({
   const [container, setContainer] = useState<VideoContainer>('mp4')
   // Video: multi-select track languages. Audio-only: single dropdown language.
   const [langKeys, setLangKeys] = useState<string[]>([])
+  const [moreLangsOpen, setMoreLangsOpen] = useState(false)
   const [audioLangKey, setAudioLangKey] = useState<string>('__default__')
   const [audioFmt, setAudioFmt] = useState<AudioOutputFormat>('mp3')
 
-  // Establish sensible defaults whenever a new media is analyzed.
+  // Establish sensible defaults whenever a new media is analyzed. The picker
+  // always opens on the Video tab — grabbing the video is the main flow.
   useEffect(() => {
-    const restoreAudio = settings.rememberLastChoices && settings.lastKind === 'audio'
-    const initialKind: DownloadKind = restoreAudio
-      ? hasAudio
-        ? 'audio'
-        : 'video'
-      : hasVideo
-        ? 'video'
-        : 'audio'
+    const initialKind: DownloadKind = hasVideo ? 'video' : 'audio'
     setKind(initialKind)
     setVideoId(info.videoFormats[0]?.formatId ?? '')
     setContainer(settings.preferredVideoContainer)
     const initialKeys = initialLanguageKeys(info, settings)
     setLangKeys(initialKeys)
+    setMoreLangsOpen(false)
     setAudioLangKey(initialKeys[0] ?? '__default__')
     setAudioFmt(settings.preferredAudioFormat)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -186,6 +191,22 @@ export function FormatPicker({
     () => info.audioGroups.filter((g) => langKeys.includes(groupKey(g.language))),
     [info.audioGroups, langKeys]
   )
+
+  // Favorite languages first (in the user's ranked order, e.g. English before
+  // German); every other language collapses behind the "More" pill.
+  const { rankedGroups, hiddenGroups } = useMemo(() => {
+    const favoriteKeys = matchedFavoriteKeys(info, settings)
+    const ranked = favoriteKeys
+      .map((key) => info.audioGroups.find((g) => groupKey(g.language) === key))
+      .filter((g): g is AudioLanguageGroup => !!g)
+    if (ranked.length === 0) {
+      const def = info.audioGroups.find((g) => g.isDefault) ?? info.audioGroups[0]
+      if (def) ranked.push(def)
+    }
+    const hidden = info.audioGroups.filter((g) => !ranked.includes(g))
+    return { rankedGroups: ranked, hiddenGroups: hidden }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [info.id, settings.multiAudio.languages])
 
   const audioKindGroup =
     info.audioGroups.find((g) => groupKey(g.language) === audioLangKey) ??
@@ -322,6 +343,23 @@ export function FormatPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection])
 
+  const renderLangPill = (g: AudioLanguageGroup): JSX.Element => {
+    const key = groupKey(g.language)
+    const compatible = !!findCompatibleAudioFormat(container, g.formats)
+    return (
+      <button
+        key={key}
+        className={`chip chip-sm ${langKeys.includes(key) ? 'active' : ''}`}
+        disabled={!compatible}
+        title={compatible ? undefined : `Not available for ${container.toUpperCase()}`}
+        onClick={() => toggleLang(key)}
+      >
+        {g.languageLabel}
+        {g.isDefault ? ' ★' : ''}
+      </button>
+    )
+  }
+
   const kindOptions = [
     {
       value: 'video' as const,
@@ -359,27 +397,23 @@ export function FormatPicker({
             <div className="lang-chips-row">
               <div className="control-label">Audio tracks</div>
               <div className="sub-lang-chips">
-                {info.audioGroups.map((g) => {
-                  const key = groupKey(g.language)
-                  const compatible = !!findCompatibleAudioFormat(container, g.formats)
-                  return (
-                    <button
-                      key={key}
-                      className={`chip chip-sm ${langKeys.includes(key) ? 'active' : ''}`}
-                      disabled={!compatible}
-                      title={
-                        compatible
-                          ? undefined
-                          : `Not available for ${container.toUpperCase()}`
-                      }
-                      onClick={() => toggleLang(key)}
-                    >
-                      {g.languageLabel}
-                      {g.isDefault ? ' ★' : ''}
-                    </button>
-                  )
-                })}
+                {rankedGroups.map((g) => renderLangPill(g))}
+                {hiddenGroups.length > 0 && (
+                  <button
+                    className="chip chip-sm chip-more"
+                    onClick={() => setMoreLangsOpen((v) => !v)}
+                  >
+                    {moreLangsOpen ? 'Hide ▴' : `More (${hiddenGroups.length}) ▾`}
+                  </button>
+                )}
               </div>
+              {hiddenGroups.length > 0 && (
+                <div className={`lang-more ${moreLangsOpen ? 'open' : ''}`}>
+                  <div className="sub-lang-chips">
+                    {hiddenGroups.map((g) => renderLangPill(g))}
+                  </div>
+                </div>
+              )}
               {selectedGroups.length >= 2 && (
                 <span className="lang-chips-note">
                   <Icon name="sparkle" size={13} /> All selected languages are embedded as

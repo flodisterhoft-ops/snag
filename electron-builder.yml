@@ -27,6 +27,7 @@ extraResources:
     filter:
       - manifest.json
       - background.js
+      - config.js
       - content.js
       - content.css
       - README.md

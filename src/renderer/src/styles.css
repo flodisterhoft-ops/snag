@@ -2113,3 +2113,46 @@ select {
   font-family: var(--font-mono);
   text-align: right;
 }
+
+/* ---------- Two-column save/download footer with a substantial button ---------- */
+.save-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.folder-pick {
+  min-height: 64px;
+}
+.btn-download {
+  min-height: 64px;
+  justify-content: center;
+  border-radius: var(--radius);
+  font-size: 16px;
+  padding: 0 24px;
+}
+.btn-download-label {
+  align-items: center;
+}
+.btn-download-sub {
+  font-size: 11.5px;
+}
+
+/* ---------- Favorite-language pills with a "More" expander ---------- */
+.chip-more {
+  color: var(--text-3);
+  border-style: dashed;
+}
+.chip-more:hover {
+  color: var(--text);
+}
+.lang-more {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.25s ease;
+}
+.lang-more.open {
+  max-height: 240px;
+}
+.lang-more .sub-lang-chips {
+  padding-top: 8px;
+}
