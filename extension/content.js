@@ -166,6 +166,7 @@
       font-size: 13px; line-height: 1.45;
       transform-origin: top right; animation: snagIn 0.24s cubic-bezier(0.24, 0.9, 0.32, 1.15) both;
     }
+    .panel:focus-visible { outline: 2px solid #c6f24d; outline-offset: 3px; }
     .panel.closing { animation: snagOut 0.16s ease both; }
     @keyframes snagIn { from { opacity: 0; transform: translateY(-10px) scale(0.96); } to { opacity: 1; transform: none; } }
     @keyframes snagOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-8px) scale(0.97); } }
@@ -222,6 +223,10 @@
     .btn2:hover { border-color: #c6f24d; }
     .accent2 { background: linear-gradient(160deg, #c6f24d, #aee235); color: #17200a; border: 0; font-weight: 800; }
     .err { color: #ff9d94; font-size: 12.5px; text-align: center; }
+    @media (prefers-reduced-motion: reduce) {
+      .panel, .panel.closing, .spin { animation-duration: 0.001ms !important; }
+      .more-wrap { transition: none; }
+    }
   `
 
   let panel = null // { host, shadow, root, state..., destroy() }
@@ -231,6 +236,7 @@
     const p = panel
     panel = null
     p.cleanup()
+    if (p.returnFocus && p.returnFocus.isConnected) p.returnFocus.focus({ preventScroll: true })
     if (immediate) p.host.remove()
     else {
       p.root.classList.add('closing')
@@ -256,14 +262,19 @@
   function openPanel(btn, video) {
     closePanel(true)
 
-    const host = el('div')
+    const host = el('div', 'snag-panel-host')
+    host.dataset.snagPanel = 'true'
     host.style.cssText = `position:fixed;z-index:2147483647;width:${PANEL_WIDTH}px;`
-    const shadow = host.attachShadow({ mode: 'closed' })
+    const shadow = host.attachShadow({ mode: 'open' })
     const sheet = new CSSStyleSheet()
     sheet.replaceSync(PANEL_CSS)
     shadow.adoptedStyleSheets = [sheet]
 
     const root = el('div', 'panel')
+    root.setAttribute('role', 'dialog')
+    root.setAttribute('aria-label', 'Snag download options')
+    root.setAttribute('aria-modal', 'false')
+    root.tabIndex = -1
     shadow.appendChild(root)
     document.documentElement.appendChild(host)
     positionPanel(host, btn)
@@ -286,16 +297,20 @@
     }
     const onKey = (e) => { if (e.key === 'Escape') closePanel() }
     const onNav = () => closePanel(true)
-    document.addEventListener('click', onDocClick, true)
+    const outsideClickTimer = setTimeout(() => document.addEventListener('click', onDocClick, true), 0)
     document.addEventListener('keydown', onKey, true)
     addEventListener('popstate', onNav)
     addEventListener('yt-navigate-start', onNav, true)
     document.addEventListener('fullscreenchange', onNav)
 
     panel = {
-      host, root, pageUrl,
-      reposition: () => positionPanel(host, btn),
+      host, root, pageUrl, anchor: btn, returnFocus: btn,
+      reposition: () => {
+        const anchor = panel && panel.host === host ? panel.anchor : btn
+        if (anchor && anchor.isConnected) positionPanel(host, anchor)
+      },
       cleanup: () => {
+        clearTimeout(outsideClickTimer)
         document.removeEventListener('click', onDocClick, true)
         document.removeEventListener('keydown', onKey, true)
         removeEventListener('popstate', onNav)
@@ -303,6 +318,8 @@
         document.removeEventListener('fullscreenchange', onNav)
       }
     }
+
+    requestAnimationFrame(() => root.focus({ preventScroll: true }))
 
     // ----- rendering -----
     const LOGO = '<svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>'
@@ -313,6 +330,9 @@
       dot.innerHTML = LOGO
       const t = el('span', 'title', title)
       const x = el('button', 'x', '✕')
+      x.type = 'button'
+      x.title = 'Close'
+      x.setAttribute('aria-label', 'Close download options')
       x.addEventListener('click', () => closePanel())
       head.append(dot, t, x)
       return head
@@ -363,7 +383,20 @@
     }
 
     function selectedGroups() {
-      return state.groups.filter((g) => state.selectedLangs.includes(g.language || ''))
+      return state.selectedLangs
+        .map((key) => state.groups.find((g) => (g.language || '') === key))
+        .filter(Boolean)
+    }
+
+    function saveFavoriteLanguages() {
+      const languages = state.selectedLangs.map(langBase).filter(Boolean)
+      if (!languages.length) return
+      state.defaults = {
+        ...(state.defaults || {}),
+        favorites: languages,
+        multiAudioEnabled: languages.length >= 2
+      }
+      void sendMessage({ type: 'snag:set-audio-favorites', languages })
     }
 
     // Favorite pills first (ranked by settings order), the rest behind "More".
@@ -383,9 +416,11 @@
       for (const g of state.groups) {
         if (!ranked.includes(g)) rest.push(g)
       }
-      // Nothing favorited on this video: promote the default track.
+      // Nothing favorited on this video: explicitly prefer English, then the
+      // video's declared default/original track.
       if (!ranked.length) {
-        const def = state.groups.find((g) => g.isDefault) || state.groups[0]
+        const def = state.groups.find((g) => langBase(g.language) === 'en') ||
+          state.groups.find((g) => g.isDefault) || state.groups[0]
         ranked.push(def)
         const i = rest.indexOf(def)
         if (i >= 0) rest.splice(i, 1)
@@ -422,7 +457,12 @@
       for (const g of ranked) mainRow.appendChild(pillFor(g))
       if (rest.length) {
         const more = el('button', 'pill ghost', state.moreOpen ? 'Hide ▴' : `More (${rest.length}) ▾`)
-        more.addEventListener('click', () => { state.moreOpen = !state.moreOpen; renderPicker() })
+        more.addEventListener('click', () => {
+          const wasOpen = state.moreOpen
+          state.moreOpen = !state.moreOpen
+          if (wasOpen && !single) saveFavoriteLanguages()
+          renderPicker()
+        })
         mainRow.appendChild(more)
         for (const g of rest) moreRow.appendChild(pillFor(g))
       }
@@ -573,21 +613,25 @@
       state.defaults = defaultsRes.ok ? defaultsRes.data : null
       state.groups = data.info.audioGroups || []
 
-      // Preselect favorites present on the video (ranked), else the default track.
+      // Preselect favorites present on the video (ranked). Multi-audio off means
+      // only the first favorite; with no match prefer English, then the default.
       const favs = (state.defaults?.favorites || ['en']).map(langBase)
       const picked = []
       for (const base of favs) {
         const g = state.groups.find((x) => x.language && langBase(x.language) === base)
         if (g && !picked.includes(g.language || '')) picked.push(g.language || '')
       }
+      if (picked.length && !state.defaults?.multiAudioEnabled) picked.splice(1)
       if (!picked.length && state.groups.length) {
-        const def = state.groups.find((g) => g.isDefault) || state.groups[0]
+        const def = state.groups.find((g) => langBase(g.language) === 'en') ||
+          state.groups.find((g) => g.isDefault) || state.groups[0]
         picked.push(def.language || '')
       }
       state.selectedLangs = picked
       state.audioLang = picked[0] ?? null
       state.kind = 'video'
       renderPicker()
+      requestAnimationFrame(() => root.focus({ preventScroll: true }))
     }
 
     void start()
@@ -597,6 +641,7 @@
 
   function makeButton(video) {
     const btn = document.createElement('button')
+    btn._snagVideo = video
     btn.className = 'snag-dl-btn'
     btn.type = 'button'
     btn.title = 'Download with Snag'
@@ -606,8 +651,13 @@
       (e) => {
         e.preventDefault()
         e.stopPropagation()
-        if (panel) closePanel()
-        else openPanel(btn, video)
+        if (panel) {
+          if (panel.anchor === btn) closePanel()
+          else {
+            closePanel(true)
+            openPanel(btn, btn._snagVideo)
+          }
+        } else openPanel(btn, btn._snagVideo)
       },
       true
     )
@@ -645,14 +695,26 @@
       closePanel(true)
     }
     const videos = document.querySelectorAll('video')
+    const currentVideos = new Set(videos)
     const seen = new Set()
     for (const video of videos) {
       seen.add(video)
       let btn = buttons.get(video)
       if (eligible(video)) {
         if (!btn) {
-          btn = makeButton(video)
-          document.documentElement.appendChild(btn)
+          // YouTube and other SPA players frequently replace the <video>
+          // element while keeping the same visible player. Reuse the existing
+          // overlay so it cannot disappear between pointer-down and click.
+          const orphan = [...buttons.entries()].find(([oldVideo]) => !currentVideos.has(oldVideo))
+          if (orphan) {
+            const [oldVideo, oldButton] = orphan
+            buttons.delete(oldVideo)
+            btn = oldButton
+            btn._snagVideo = video
+          } else {
+            btn = makeButton(video)
+            document.documentElement.appendChild(btn)
+          }
           buttons.set(video, btn)
         }
         btn.style.display = 'block'
@@ -664,6 +726,13 @@
     // Videos that left the DOM (SPA navigation) take their buttons with them.
     for (const [video, btn] of buttons) {
       if (!seen.has(video)) {
+        if (panel && panel.anchor === btn) {
+          const replacement = [...buttons.values()].find((candidate) => candidate !== btn && candidate.isConnected && candidate.style.display !== 'none')
+          if (replacement) {
+            panel.anchor = replacement
+            panel.returnFocus = replacement
+          }
+        }
         btn.remove()
         buttons.delete(video)
       }

@@ -1,6 +1,6 @@
 // Snag for Chrome — background service worker.
 // Two jobs: (1) bridge the in-page panel to Snag's loopback API using the
-// pairing token from config.js (written by the Snag app), and (2) keep the
+// pairing token from config.js or automatic loopback pairing, and (2) keep the
 // classic snag:// deep-link actions for toolbar/context-menu use and as the
 // fallback when the app isn't running.
 
@@ -22,6 +22,21 @@ function isHttp(url) {
 // ---------- Loopback API bridge ----------
 
 let workingPort = null
+let pairingToken = (SNAG_CONFIG && SNAG_CONFIG.token) || ''
+const DEFAULT_PORTS = [43110, 43111, 43112, 43113, 43114, 43115, 43116, 43117]
+
+async function loadPairingToken() {
+  if (pairingToken) return pairingToken
+  const stored = await chrome.storage.local.get('snagPairingToken')
+  pairingToken = typeof stored.snagPairingToken === 'string' ? stored.snagPairingToken : ''
+  return pairingToken
+}
+
+async function savePairingToken(token) {
+  pairingToken = token
+  if (token) await chrome.storage.local.set({ snagPairingToken: token })
+  else await chrome.storage.local.remove('snagPairingToken')
+}
 
 async function apiFetch(port, path, options, timeoutMs) {
   const controller = new AbortController()
@@ -30,7 +45,7 @@ async function apiFetch(port, path, options, timeoutMs) {
     return await fetch(`http://127.0.0.1:${port}${path}`, {
       ...options,
       headers: {
-        Authorization: 'Bearer ' + SNAG_CONFIG.token,
+        ...(pairingToken ? { Authorization: 'Bearer ' + pairingToken } : {}),
         'Content-Type': 'application/json',
         ...(options && options.headers)
       },
@@ -41,20 +56,57 @@ async function apiFetch(port, path, options, timeoutMs) {
   }
 }
 
+async function pairWithSnag(port) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 900)
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/pair`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      signal: controller.signal
+    })
+    if (!res.ok) return false
+    const data = await res.json()
+    if (!data || data.app !== 'snag' || typeof data.token !== 'string') return false
+    await savePairingToken(data.token)
+    return true
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // Find the port Snag is listening on (cached once found; re-scanned on failure).
 async function findSnag() {
-  if (!SNAG_CONFIG.token || !SNAG_CONFIG.ports || SNAG_CONFIG.ports.length === 0) return null
+  await loadPairingToken()
+  const configuredPorts = Array.isArray(SNAG_CONFIG && SNAG_CONFIG.ports)
+    ? SNAG_CONFIG.ports
+    : []
+  const ports = [...new Set([...configuredPorts, ...DEFAULT_PORTS])]
   const candidates = workingPort
-    ? [workingPort, ...SNAG_CONFIG.ports.filter((p) => p !== workingPort)]
-    : SNAG_CONFIG.ports
+    ? [workingPort, ...ports.filter((p) => p !== workingPort)]
+    : ports
   for (const port of candidates) {
     try {
+      if (!pairingToken && !(await pairWithSnag(port))) continue
       const res = await apiFetch(port, '/ping', { method: 'GET' }, 900)
       if (res.ok) {
         const data = await res.json()
         if (data && data.app === 'snag') {
           workingPort = port
           return port
+        }
+      }
+      if (res.status === 401) {
+        await savePairingToken('')
+        if (await pairWithSnag(port)) {
+          const retry = await apiFetch(port, '/ping', { method: 'GET' }, 900)
+          if (retry.ok) {
+            workingPort = port
+            return port
+          }
         }
       }
     } catch {
@@ -103,6 +155,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       '/enqueue',
       { method: 'POST', body: JSON.stringify(message.request) },
       8000
+    ).then(sendResponse)
+    return true
+  }
+  if (message.type === 'snag:set-audio-favorites') {
+    callSnag(
+      '/preferences/audio-languages',
+      { method: 'POST', body: JSON.stringify({ languages: message.languages }) },
+      3000
     ).then(sendResponse)
     return true
   }

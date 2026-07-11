@@ -96,4 +96,22 @@ describe('buildDownloadArgs', () => {
     expect(selector).toContain("140[acodec~='^(opus|vorbis)']")
     expect(selector).toContain("bv*[vcodec~='^(vp8|vp9|vp0?9|av01)']+ba[acodec~='^(opus|vorbis)']")
   })
+
+  it('embeds every selected audio language into one video file', () => {
+    const args = buildDownloadArgs(
+      { ...request, audioFormatIds: ['140-21', '140-0'] },
+      { ...settings, embedMetadata: false },
+      { ffmpegLocation: null }
+    )
+    const selector = args[args.indexOf('-f') + 1]
+    expect(selector).toContain('137')
+    expect(selector).toContain('+140-21')
+    expect(selector).toContain('+140-0')
+    expect(args).toContain('--audio-multistreams')
+    expect(args.filter((arg) => arg === '--embed-metadata')).toHaveLength(1)
+    expect(args.slice(args.indexOf('--merge-output-format'), args.indexOf('--merge-output-format') + 2)).toEqual([
+      '--merge-output-format',
+      'mp4'
+    ])
+  })
 })

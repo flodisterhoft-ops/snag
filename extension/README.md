@@ -32,7 +32,8 @@ offers an *Always allow* option, select it to skip that prompt next time.
 > **Notes**
 > - Unpacked extensions do not auto-update. When a Snag release changes the
 >   companion, first click **Refresh extension folder** in Snag, then open
->   `chrome://extensions` and click **Reload** on "Snag for Chrome".
+>   `chrome://extensions` and click **Reload** on "Snag for Chrome". The
+>   extension pairs with the running Snag app automatically after reload.
 > - Chrome may occasionally show a "disable developer mode extensions" notice
 >   at startup. It's dismissible and harmless.
 > - The button is translucent until hovered, is hidden in fullscreen, and sends

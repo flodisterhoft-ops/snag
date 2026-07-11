@@ -338,8 +338,11 @@ export function SettingsScreen(): JSX.Element {
             label="Download all my languages"
           />
         </Row>
-        {form.multiAudio.enabled && (
-          <Row title="My languages" desc="Comma-separated codes, e.g. en, de" stacked>
+        <Row
+          title="Favorite languages"
+          desc="Shown first in the picker, in this order. Use language codes such as en, de."
+          stacked
+        >
             <input
               className="text-input mono"
               value={audioLangText}
@@ -358,8 +361,7 @@ export function SettingsScreen(): JSX.Element {
               }
               placeholder="en, de"
             />
-          </Row>
-        )}
+        </Row>
       </Section>
 
       <Section title="Extras">
@@ -442,7 +444,7 @@ export function SettingsScreen(): JSX.Element {
         </Row>
         <Row
           title="Chrome extension"
-          desc="Adds a translucent button over supported web videos; Chrome requires one manual setup"
+          desc="Adds a translucent button and an in-video picker; Chrome requires one manual setup"
           stacked
         >
           <div className="ext-install">
@@ -468,11 +470,11 @@ export function SettingsScreen(): JSX.Element {
                   </li>
                   <li>
                     First installation: click <strong>Load unpacked</strong> and pick the folder
-                    above. After a Snag update, click <strong>Reload</strong> on its extension card
+                    above. After a Snag update, click <strong>Reload</strong> on its extension card;
+                    it reconnects to Snag automatically
                   </li>
                   <li>
-                    Click the Snag button once, choose <strong>Open Snag</strong>, and allow future
-                    links when Chrome offers the option
+                    Keep Snag running in the tray so the in-video picker opens instantly
                   </li>
                   <li>Reload any video tabs that were already open</li>
                 </ol>

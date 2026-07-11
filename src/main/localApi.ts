@@ -5,8 +5,9 @@ import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { analyze } from './metadata'
 import { downloadManager } from './downloader'
-import { loadSettings } from './settings'
+import { loadSettings, saveSettings } from './settings'
 import { isHttpUrl } from './protocol'
+import { isChromeExtensionOrigin, normalizeAudioLanguages } from '@shared/browserIntegration'
 import type { DownloadRequest, VideoContainer, AudioOutputFormat } from '@shared/types'
 
 // Loopback API for the Chrome extension's in-page download panel. Bound to
@@ -56,13 +57,20 @@ function isAuthorized(req: IncomingMessage): boolean {
   return provided.length === expected.length && timingSafeEqual(provided, expected)
 }
 
-function sendJson(res: ServerResponse, status: number, payload: unknown): void {
+function sendJson(
+  res: ServerResponse,
+  status: number,
+  payload: unknown,
+  origin?: string
+): void {
   const body = JSON.stringify(payload)
+  const allowedOrigin = isChromeExtensionOrigin(origin) ? origin : '*'
   res.writeHead(status, {
     'Content-Type': 'application/json',
     // The Bearer token is the actual gate; CORS only needs to let the
     // extension's service worker read responses.
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': allowedOrigin,
+    Vary: 'Origin',
     'Access-Control-Allow-Headers': 'Authorization, Content-Type',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
   })
@@ -139,14 +147,27 @@ function requestFromBody(raw: unknown): DownloadRequest | null {
 }
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined
   if (req.method === 'OPTIONS') {
-    sendJson(res, 204, {})
+    sendJson(res, 204, {}, origin)
     return
   }
   const path = (req.url ?? '/').split('?')[0]
 
+  // Existing unpacked installs may live outside Snag's generated extension
+  // folder and therefore have no token in config.js. Only a real Chromium
+  // extension origin can request a token; ordinary websites are rejected.
+  if (req.method === 'POST' && path === '/pair') {
+    if (!isChromeExtensionOrigin(origin)) {
+      sendJson(res, 403, { error: 'extension origin required' }, origin)
+      return
+    }
+    sendJson(res, 200, { app: 'snag', token: getLocalApiToken() }, origin)
+    return
+  }
+
   if (!isAuthorized(req)) {
-    sendJson(res, 401, { error: 'unauthorized' })
+    sendJson(res, 401, { error: 'unauthorized' }, origin)
     return
   }
 
@@ -165,6 +186,25 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       preferredContainer: s.preferredVideoContainer,
       preferredAudioFormat: s.preferredAudioFormat
     })
+    return
+  }
+
+  if (req.method === 'POST' && path === '/preferences/audio-languages') {
+    let languages: string[] = []
+    try {
+      const body = JSON.parse(await readBody(req)) as { languages?: unknown }
+      languages = normalizeAudioLanguages(body.languages)
+    } catch {
+      /* handled below */
+    }
+    if (languages.length === 0) {
+      sendJson(res, 400, { ok: false, error: 'Choose at least one language.' }, origin)
+      return
+    }
+    const settings = saveSettings({
+      multiAudio: { enabled: languages.length >= 2, languages }
+    })
+    sendJson(res, 200, { ok: true, favorites: settings.multiAudio.languages }, origin)
     return
   }
 

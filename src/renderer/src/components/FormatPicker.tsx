@@ -84,7 +84,10 @@ export function matchedFavoriteKeys(info: MediaInfo, settings: Settings): string
 // favorites when multi-audio is on, the top favorite otherwise, else the
 // video's default track.
 export function initialLanguageKeys(info: MediaInfo, settings: Settings): string[] {
-  const defaultGroup = info.audioGroups.find((g) => g.isDefault) ?? info.audioGroups[0]
+  const defaultGroup =
+    info.audioGroups.find((g) => g.language && baseLang(g.language) === 'en') ??
+    info.audioGroups.find((g) => g.isDefault) ??
+    info.audioGroups[0]
   const defaultKeys = defaultGroup ? [groupKey(defaultGroup.language)] : []
   if (!info.hasMultipleAudioLanguages) return defaultKeys
 
@@ -186,11 +189,24 @@ export function FormatPicker({
     })
   }
 
-  // Groups selected for video downloads, in the video's own track order.
+  // Groups selected for video downloads, in the user's chosen ranking.
   const selectedGroups = useMemo(
-    () => info.audioGroups.filter((g) => langKeys.includes(groupKey(g.language))),
+    () =>
+      langKeys
+        .map((key) => info.audioGroups.find((g) => groupKey(g.language) === key))
+        .filter((g): g is AudioLanguageGroup => !!g),
     [info.audioGroups, langKeys]
   )
+
+  const saveFavoriteLanguages = (): void => {
+    const languages = selectedGroups
+      .map((group) => (group.language ? baseLang(group.language) : ''))
+      .filter(Boolean)
+    if (languages.length === 0) return
+    void updateSettings({
+      multiAudio: { enabled: languages.length >= 2, languages }
+    }).catch((err) => console.error('Could not remember favorite audio languages:', err))
+  }
 
   // Favorite languages first (in the user's ranked order, e.g. English before
   // German); every other language collapses behind the "More" pill.
@@ -200,7 +216,10 @@ export function FormatPicker({
       .map((key) => info.audioGroups.find((g) => groupKey(g.language) === key))
       .filter((g): g is AudioLanguageGroup => !!g)
     if (ranked.length === 0) {
-      const def = info.audioGroups.find((g) => g.isDefault) ?? info.audioGroups[0]
+      const def =
+        info.audioGroups.find((g) => g.language && baseLang(g.language) === 'en') ??
+        info.audioGroups.find((g) => g.isDefault) ??
+        info.audioGroups[0]
       if (def) ranked.push(def)
     }
     const hidden = info.audioGroups.filter((g) => !ranked.includes(g))
@@ -284,11 +303,9 @@ export function FormatPicker({
       if (prev.includes(key)) {
         return prev.length > 1 ? prev.filter((k) => k !== key) : prev
       }
-      // Keep the video's own track order so the default language stays primary.
-      const next = [...prev, key]
-      return info.audioGroups
-        .map((g) => groupKey(g.language))
-        .filter((k) => next.includes(k))
+      // Preserve the user's click order; it becomes both the visible ranking
+      // and the stream order embedded in the downloaded file.
+      return [...prev, key]
     })
   }
 
@@ -401,7 +418,11 @@ export function FormatPicker({
                 {hiddenGroups.length > 0 && (
                   <button
                     className="chip chip-sm chip-more"
-                    onClick={() => setMoreLangsOpen((v) => !v)}
+                    aria-expanded={moreLangsOpen}
+                    onClick={() => {
+                      if (moreLangsOpen) saveFavoriteLanguages()
+                      setMoreLangsOpen((v) => !v)
+                    }}
                   >
                     {moreLangsOpen ? 'Hide ▴' : `More (${hiddenGroups.length}) ▾`}
                   </button>
