@@ -11,7 +11,7 @@ import { refreshInstalledBrowserExtension } from './extension'
 
 // Windows: needed for notifications to show the app identity/name correctly.
 if (process.platform === 'win32') {
-  app.setAppUserModelId('com.julia.snag')
+  app.setAppUserModelId('com.flodisterhoft.snag')
 }
 
 // Register snag:// with the OS so browsers can hand links to Snag. In dev the

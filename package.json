@@ -2,7 +2,7 @@
   "name": "snag",
   "version": "1.2.2",
   "description": "Snag — a simple, powerful video & audio downloader powered by yt-dlp",
-  "author": "Julia",
+  "author": "flodisterhoft-ops",
   "license": "MIT",
   "main": "./out/main/index.js",
   "scripts": {
