@@ -38,7 +38,7 @@
     const units = ['B', 'KB', 'MB', 'GB']
     let i = 0
     while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
-    return (n >= 100 || i === 0 ? Math.round(n) : n.toFixed(1)) + ' ' + units[i]
+    return (n >= 100 || i === 0 ? Math.round(n) : i >= 3 ? n.toFixed(2) : n.toFixed(1)) + ' ' + units[i]
   }
 
   function shortPath(p) {
@@ -119,18 +119,39 @@
     return ok[0] || null
   }
 
-  // Best row per container: highest resolution, then fps, then smallest file.
-  function bestRows(info, selectedGroups) {
+  function qualityLabel(height) {
+    if (height <= 0) return 'Best'
+    if (height >= 4320) return '8K'
+    if (height >= 2160) return '4K'
+    return `${height}p`
+  }
+
+  function meaningfulSmallest(rows) {
+    const known = rows.filter((r) => r.total != null).sort((a, b) => a.total - b.total)
+    if (known.length < 2) return null
+    const threshold = Math.max(10 * 1024 * 1024, known[1].total * 0.01)
+    return known[1].total - known[0].total >= threshold ? known[0] : null
+  }
+
+  function recommendedRow(rows, multipleAudio, preferred) {
+    return (multipleAudio && rows.find((r) => r.container === 'mkv')) ||
+      (!multipleAudio && rows.find((r) => r.container === 'mp4')) ||
+      rows.find((r) => r.container === preferred) || rows[0] || null
+  }
+
+  // Best stream for each container at the explicitly selected resolution.
+  function rowsForQuality(info, selectedGroups, targetHeight) {
     const rows = []
     for (const container of ['mp4', 'mkv', 'webm']) {
       const candidates = (info.videoFormats || []).filter((f) => {
+        if (info.hasMultipleAudioLanguages && f.isProgressive) return false
         if (!videoOk(container, f)) return false
         if (f.isProgressive && f.acodec && f.acodec !== 'none' && !AUDIO_COMPAT[container].test(f.acodec)) return false
         return true
       })
       if (!candidates.length) continue
-      const maxH = Math.max(...candidates.map((f) => f.height || 0))
-      let pool = candidates.filter((f) => (f.height || 0) === maxH)
+      let pool = candidates.filter((f) => (f.height || 0) === targetHeight)
+      if (!pool.length) continue
       const maxFps = Math.max(...pool.map((f) => f.fps || 0))
       pool = pool.filter((f) => (f.fps || 0) === maxFps)
       pool.sort((a, b) => (a.filesize ?? Infinity) - (b.filesize ?? Infinity) || (b.tbr || 0) - (a.tbr || 0))
@@ -149,7 +170,6 @@
       }
       rows.push({ container, video, tracks, total, approx })
     }
-    rows.sort((a, b) => (a.total ?? Infinity) - (b.total ?? Infinity))
     return rows
   }
 
@@ -164,12 +184,12 @@
       border: 1px solid rgba(255,255,255,0.14); border-radius: 16px;
       box-shadow: 0 24px 60px -18px rgba(0,0,0,0.85);
       font-size: 13px; line-height: 1.45;
-      transform-origin: top right; animation: snagIn 0.24s cubic-bezier(0.24, 0.9, 0.32, 1.15) both;
+      transform-origin: top right; animation: snagIn 0.30s cubic-bezier(0.2, 0.9, 0.28, 1.12) both;
     }
     .panel:focus-visible { outline: 2px solid #c6f24d; outline-offset: 3px; }
     .panel.closing { animation: snagOut 0.16s ease both; }
-    @keyframes snagIn { from { opacity: 0; transform: translateY(-10px) scale(0.96); } to { opacity: 1; transform: none; } }
-    @keyframes snagOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-8px) scale(0.97); } }
+    @keyframes snagIn { from { opacity: .35; transform: scale(0.09); border-radius: 50%; } to { opacity: 1; transform: none; border-radius: 16px; } }
+    @keyframes snagOut { from { opacity: 1; transform: none; } to { opacity: .2; transform: scale(0.09); border-radius: 50%; } }
     .panel::-webkit-scrollbar { width: 9px; }
     .panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
     .head { display: flex; align-items: center; gap: 9px; padding: 13px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); position: sticky; top: 0; background: #191c23; z-index: 2; border-radius: 16px 16px 0 0; }
@@ -209,15 +229,26 @@
     .more-wrap .pills { padding-top: 7px; }
     .note { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #a7adb7; }
     .note::before { content: '✦'; color: #c6f24d; }
-    .foot { display: grid; grid-template-columns: 1fr 1.1fr; gap: 10px; align-items: stretch; }
-    .save { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 10px 13px; background: #0f1116; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; min-width: 0; }
-    .save small { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #6f757f; font-weight: 700; }
-    .save span { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+    .choice { min-height: 48px; padding: 8px 6px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.14); background: #0f1116; color: #a7adb7; cursor: pointer; font-size: 12px; font-weight: 700; transition: transform .16s ease, background .16s ease, border-color .16s ease; }
+    .choice:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.28); }
+    .choice.on { background: rgba(198,242,77,.14); border-color: #c6f24d; color: #fff; transform: translateY(-1px); }
+    .choice small { display:block; color:#6f757f; font-size:10px; font-weight:600; margin-top:2px; }
+    .choice.on small { color:#aebd8a; }
+    .rec { color:#c6f24d !important; }
+    .foot { display: block; }
     .dl { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 13px 16px; border: 0; border-radius: 12px; background: linear-gradient(160deg, #c6f24d, #aee235); color: #17200a; font-weight: 800; font-size: 15px; cursor: pointer; box-shadow: 0 10px 26px -12px rgba(198,242,77,0.7); }
     .dl:hover { filter: brightness(1.05); }
     .dl:active { transform: translateY(1px); }
     .dl:disabled { opacity: 0.45; cursor: not-allowed; }
     .dl small { font-size: 10.5px; font-weight: 700; opacity: 0.75; }
+    .progress-card { display:flex; flex-direction:column; gap:12px; padding:8px 2px 4px; }
+    .progress-top { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+    .progress-top strong { font-size:15px; }
+    .progress-top span { color:#c6f24d; font-weight:800; font-size:15px; }
+    .progress-track { height:10px; border-radius:999px; background:#0f1116; overflow:hidden; border:1px solid rgba(255,255,255,.08); }
+    .progress-fill { height:100%; border-radius:inherit; background:linear-gradient(90deg,#aee235,#d5ff63); transition:width .35s ease; }
+    .progress-meta { display:flex; justify-content:space-between; color:#a7adb7; font-size:11.5px; }
     .ok-mark { width: 46px; height: 46px; border-radius: 50%; background: rgba(198,242,77,0.15); border: 1.5px solid #c6f24d; display: grid; place-items: center; color: #c6f24d; font-size: 22px; }
     .btn2 { padding: 9px 16px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.2); background: none; color: #eef0f3; font-size: 12.5px; font-weight: 600; cursor: pointer; }
     .btn2:hover { border-color: #c6f24d; }
@@ -254,7 +285,7 @@
   function positionPanel(host, btn) {
     const r = btn.getBoundingClientRect()
     const left = Math.max(8, Math.min(r.right - PANEL_WIDTH, innerWidth - PANEL_WIDTH - 8))
-    const top = Math.min(r.bottom + 8, innerHeight - 120)
+    const top = Math.max(8, Math.min(r.top, innerHeight - 120))
     host.style.left = left + 'px'
     host.style.top = top + 'px'
   }
@@ -278,19 +309,21 @@
     shadow.appendChild(root)
     document.documentElement.appendChild(host)
     positionPanel(host, btn)
+    btn.style.visibility = 'hidden'
 
     const pageUrl = resolveTargetUrl(video)
     const state = {
       info: null, defaults: null, kind: 'video',
-      rows: [], container: null,
+      rows: [], container: null, quality: 0,
       groups: [], selectedLangs: [], moreOpen: false,
       audioLang: null, audioFmt: 'mp3',
-      busy: false
+      busy: false, jobId: null, pollTimer: null
     }
 
     // ----- dismissal wiring -----
     const onDocClick = (e) => {
       if (!panel) return
+      if (state.jobId) return
       const path = e.composedPath ? e.composedPath() : []
       if (path.includes(host) || path.includes(btn)) return
       closePanel()
@@ -310,6 +343,8 @@
         if (anchor && anchor.isConnected) positionPanel(host, anchor)
       },
       cleanup: () => {
+        if (btn.isConnected) btn.style.visibility = 'visible'
+        if (state.pollTimer) clearTimeout(state.pollTimer)
         clearTimeout(outsideClickTimer)
         document.removeEventListener('click', onDocClick, true)
         document.removeEventListener('keydown', onKey, true)
@@ -373,13 +408,52 @@
       renderShell('Snag', [c])
     }
 
-    function renderAdded() {
+    function renderDone() {
       const c = el('div', 'center')
       const mark = el('span', 'ok-mark', '✓')
-      c.append(mark, el('strong', null, 'Added to Snag'))
-      c.append(el('span', null, 'Downloading in the background — you can keep watching.'))
+      c.append(mark, el('strong', null, 'Download complete'))
       renderShell(state.info.title, [c])
-      setTimeout(() => closePanel(), 1900)
+      state.jobId = null
+      setTimeout(() => closePanel(), 1400)
+    }
+
+    function renderProgress(job) {
+      const percent = Math.max(0, Math.min(100, Number(job.progress) || 0))
+      const card = el('div', 'progress-card')
+      const top = el('div', 'progress-top')
+      const label = job.status === 'queued' ? 'Waiting…' : job.status === 'processing' ? 'Finishing…' : 'Downloading'
+      top.append(el('strong', null, label), el('span', null, `${Math.round(percent)}%`))
+      const track = el('div', 'progress-track')
+      const fill = el('div', 'progress-fill')
+      fill.style.width = `${percent}%`
+      track.appendChild(fill)
+      const meta = el('div', 'progress-meta')
+      meta.append(el('span', null, job.speed || job.sizeLabel || ''), el('span', null, job.eta ? `ETA ${job.eta}` : ''))
+      card.append(top, track, meta)
+      renderShell(state.info.title, [card])
+    }
+
+    async function pollJob() {
+      if (!state.jobId || !panel || panel.host !== host) return
+      const res = await sendMessage({ type: 'snag:job', jobId: state.jobId })
+      if (!state.jobId || !panel || panel.host !== host) return
+      const job = res.ok && res.data && res.data.job
+      if (!job) {
+        renderError((res.data && res.data.error) || 'Could not read download progress.')
+        state.jobId = null
+        return
+      }
+      if (job.status === 'completed') {
+        renderDone()
+        return
+      }
+      if (job.status === 'error' || job.status === 'canceled') {
+        state.jobId = null
+        renderError(job.errorMessage || 'The download stopped.')
+        return
+      }
+      renderProgress(job)
+      state.pollTimer = setTimeout(pollJob, 500)
     }
 
     function selectedGroups() {
@@ -492,30 +566,43 @@
       if (state.kind === 'video') {
         nodes.push(pillSection(false))
 
-        state.rows = bestRows(info, selectedGroups())
-        if (!state.rows.some((r) => r.container === state.container)) {
-          state.container = state.rows[0] ? state.rows[0].container : null
+        const measuredHeights = [...new Set((info.videoFormats || []).map((f) => f.height || 0).filter(Boolean))]
+        const heights = (measuredHeights.length ? measuredHeights : (info.videoFormats || []).length ? [0] : [])
+          .sort((a, b) => b - a)
+          .filter((height) => rowsForQuality(info, selectedGroups(), height).length > 0)
+        if (!heights.includes(state.quality)) state.quality = heights[0] || 0
+        const qualityWrap = el('div')
+        qualityWrap.append(el('div', 'label', 'Quality'))
+        qualityWrap.lastChild.style.marginBottom = '7px'
+        const qualityGrid = el('div', 'choice-grid')
+        for (const height of heights) {
+          const q = el('button', 'choice' + (height === state.quality ? ' on' : ''), qualityLabel(height))
+          q.addEventListener('click', () => { state.quality = height; state.container = null; renderPicker() })
+          qualityGrid.appendChild(q)
         }
-        const list = el('div', 'rows')
-        const smallest = state.rows[0]
+        qualityWrap.appendChild(qualityGrid)
+        nodes.push(qualityWrap)
+
+        state.rows = rowsForQuality(info, selectedGroups(), state.quality)
+        const recommended = recommendedRow(state.rows, selectedGroups().length >= 2, state.defaults?.preferredContainer || 'mp4')
+        if (!state.rows.some((r) => r.container === state.container)) state.container = recommended?.container || null
+        const typeWrap = el('div')
+        typeWrap.append(el('div', 'label', 'File type'))
+        typeWrap.lastChild.style.marginBottom = '7px'
+        const typeGrid = el('div', 'choice-grid')
+        const smallest = meaningfulSmallest(state.rows)
         for (const r of state.rows) {
-          const row = el('button', 'row' + (r.container === state.container ? ' on' : ''))
-          const q = el('span', 'rq')
-          const b = el('b', null, r.video.qualityLabel)
-          if (r.video.dynamicRange && r.video.dynamicRange !== 'SDR') {
-            const hdr = el('span', 'badge', r.video.dynamicRange)
-            b.appendChild(hdr)
-          }
-          const sub = el('small', null, (r.video.vcodec || 'original') + (r.tracks.length >= 2 ? ` · ${r.tracks.length} audio tracks` : ''))
-          q.append(b, sub)
-          const s = el('span', 'rs', (r.approx ? '~' : '') + formatBytes(r.total))
-          if (r === smallest && state.rows.length > 1) s.appendChild(el('span', 'tag', 'smallest'))
-          row.append(el('span', 'rdot'), el('span', 'rc', r.container.toUpperCase()), q, s)
+          const row = el('button', 'choice' + (r.container === state.container ? ' on' : ''))
+          row.append(el('span', null, r.container.toUpperCase()))
+          row.append(el('small', null, (r.approx ? '~' : '') + formatBytes(r.total)))
+          if (r === recommended) row.append(el('small', 'rec', selectedGroups().length >= 2 ? 'Recommended' : 'Most compatible'))
+          else if (r === smallest) row.append(el('small', 'rec', 'Smallest'))
           row.addEventListener('click', () => { state.container = r.container; renderPicker() })
-          list.appendChild(row)
+          typeGrid.appendChild(row)
         }
-        if (!state.rows.length) list.appendChild(el('div', 'err', 'No downloadable video streams found.'))
-        nodes.push(list)
+        if (!state.rows.length) typeGrid.appendChild(el('div', 'err', 'No compatible file types.'))
+        typeWrap.appendChild(typeGrid)
+        nodes.push(typeWrap)
       } else {
         nodes.push(pillSection(true))
         const fmts = el('div', 'pills')
@@ -531,11 +618,9 @@
         nodes.push(lw)
       }
 
-      // Footer: save-to + thick download button, two columns.
+      // The Chrome picker always uses the Downloads folder from Snag settings;
+      // keep the compact panel focused on the single action.
       const foot = el('div', 'foot')
-      const save = el('div', 'save')
-      save.append(el('small', null, 'Save to'), el('span', null, shortPath(state.defaults?.saveDir || '')))
-      save.title = (state.defaults?.saveDir || '') + ' — change in Snag settings'
       const dl = el('button', 'dl')
       const chosen = state.rows.find((r) => r.container === state.container)
       let sub = ''
@@ -545,10 +630,10 @@
       } else if (state.kind === 'audio') {
         sub = (state.audioFmt === 'best' ? 'Original' : state.audioFmt.toUpperCase())
       }
-      dl.append(el('span', null, state.busy ? 'Adding…' : 'Download'), el('small', null, sub))
+      dl.append(el('span', null, state.busy ? 'Starting…' : 'Download'), el('small', null, sub))
       dl.disabled = state.busy || (state.kind === 'video' && !chosen)
       dl.addEventListener('click', () => void enqueue(chosen))
-      foot.append(save, dl)
+      foot.append(dl)
       nodes.push(foot)
 
       renderShell(info.title, nodes)
@@ -588,7 +673,11 @@
       }
       const res = await sendMessage({ type: 'snag:enqueue', request })
       state.busy = false
-      if (res.ok && res.data && res.data.ok) renderAdded()
+      if (res.ok && res.data && res.data.ok && res.data.jobId) {
+        state.jobId = res.data.jobId
+        renderProgress({ status: 'queued', progress: 0, speed: null, eta: null })
+        void pollJob()
+      }
       else if (res.error === 'not-running') renderNotRunning()
       else renderError((res.data && res.data.error) || 'Could not add the download.')
     }
@@ -612,6 +701,7 @@
       state.info = data.info
       state.defaults = defaultsRes.ok ? defaultsRes.data : null
       state.groups = data.info.audioGroups || []
+      state.quality = Math.max(...(data.info.videoFormats || []).map((f) => f.height || 0), 0)
 
       // Preselect favorites present on the video (ranked). Multi-audio off means
       // only the first favorite; with no match prefer English, then the default.

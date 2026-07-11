@@ -3,13 +3,15 @@
 Companion extension for the [Snag](../README.md) downloader. It adds:
 
 - A translucent **download button** over supported, visible HTML5 video players
+- An animated in-page picker for quality, file type, audio tracks, and live progress
 - A **toolbar button** that sends the current page to Snag
 - **Right-click menus**: download this page / this video / a link with Snag
 - A per-site off switch: right-click → *Show/hide Snag button on this site*
 
-Everything is handed to the Snag desktop app through `snag://` links — the
-extension itself downloads nothing. Its per-site preference is stored locally
-in Chrome and is not synced to a Google account.
+The in-page picker talks only to the running Snag app on localhost; the
+extension itself downloads nothing. `snag://` remains a fallback when Snag is
+not running. Per-site preferences are stored locally in Chrome and are not
+synced to a Google account.
 
 ## Install (unpacked)
 
@@ -26,8 +28,9 @@ developer mode — a one-time, ~30-second setup:
    folder that directly contains `manifest.json`.
 5. Reload video tabs that were already open so Chrome injects the new extension.
 
-The first time you click a Snag button, Chrome asks *"Open Snag?"*. If Chrome
-offers an *Always allow* option, select it to skip that prompt next time.
+With Snag running, the overlay expands into the picker without opening another
+window. If Snag is closed and you choose the fallback, Chrome may ask *"Open
+Snag?"* before launching the desktop app.
 
 > **Notes**
 > - Unpacked extensions do not auto-update. When a Snag release changes the

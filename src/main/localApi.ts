@@ -189,6 +189,32 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return
   }
 
+  if (req.method === 'GET' && path.startsWith('/jobs/')) {
+    const id = path.slice('/jobs/'.length)
+    if (!/^job_[a-z0-9_]+$/i.test(id)) {
+      sendJson(res, 400, { ok: false, error: 'Invalid job id.' }, origin)
+      return
+    }
+    const job = downloadManager.getJob(id)
+    if (!job) {
+      sendJson(res, 404, { ok: false, error: 'Download not found.' }, origin)
+      return
+    }
+    sendJson(res, 200, {
+      ok: true,
+      job: {
+        id: job.id,
+        status: job.status,
+        progress: job.progress,
+        speed: job.speed,
+        eta: job.eta,
+        sizeLabel: job.sizeLabel,
+        errorMessage: job.errorMessage
+      }
+    }, origin)
+    return
+  }
+
   if (req.method === 'POST' && path === '/preferences/audio-languages') {
     let languages: string[] = []
     try {
@@ -240,8 +266,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       sendJson(res, 400, { ok: false, error: 'Invalid download request.' })
       return
     }
-    downloadManager.enqueue(request)
-    sendJson(res, 200, { ok: true })
+    const job = downloadManager.enqueue(request)
+    sendJson(res, 200, { ok: true, jobId: job.id }, origin)
     return
   }
 

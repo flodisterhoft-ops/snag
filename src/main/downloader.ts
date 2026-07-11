@@ -130,6 +130,10 @@ export class DownloadManager extends EventEmitter {
     return this.order.map((id) => this.jobs.get(id)).filter((j): j is DownloadJob => !!j)
   }
 
+  getJob(id: string): DownloadJob | null {
+    return this.jobs.get(id) ?? null
+  }
+
   cancel(id: string): void {
     const job = this.jobs.get(id)
     if (!job) return

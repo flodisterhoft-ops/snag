@@ -66,6 +66,36 @@ function exactResolution(format: VideoFormat): string | undefined {
   return format.width && format.height ? `${format.width}×${format.height}` : undefined
 }
 
+export function qualityTierLabel(height: number): string {
+  if (height <= 0) return 'Best'
+  if (height >= 4320) return '8K'
+  if (height >= 2160) return '4K'
+  return `${height}p`
+}
+
+export function meaningfullySmallestContainer(rows: BestRow[]): VideoContainer | null {
+  const known = rows
+    .filter((row) => row.totalSize != null)
+    .sort((a, b) => (a.totalSize as number) - (b.totalSize as number))
+  if (known.length < 2) return null
+  const smallest = known[0].totalSize as number
+  const next = known[1].totalSize as number
+  const threshold = Math.max(10 * 1024 * 1024, next * 0.01)
+  return next - smallest >= threshold ? known[0].container : null
+}
+
+export function recommendedContainer(
+  rows: BestRow[],
+  multipleAudio: boolean,
+  preferred: VideoContainer
+): VideoContainer | null {
+  const has = (container: VideoContainer): boolean => rows.some((row) => row.container === container)
+  if (multipleAudio && has('mkv')) return 'mkv'
+  if (!multipleAudio && has('mp4')) return 'mp4'
+  if (has(preferred)) return preferred
+  return rows[0]?.container ?? null
+}
+
 // The user's favorite languages that this video actually carries, in the
 // favorites' own ranking (e.g. English before German).
 export function matchedFavoriteKeys(info: MediaInfo, settings: Settings): string[] {
@@ -109,14 +139,18 @@ interface BestRow {
 function bestRowFor(
   container: VideoContainer,
   info: MediaInfo,
-  selectedGroups: AudioLanguageGroup[]
+  selectedGroups: AudioLanguageGroup[],
+  targetHeight?: number
 ): BestRow | null {
   const primaryFormats = selectedGroups[0]?.formats ?? EMPTY_AUDIO_FORMATS
-  const candidates = filterVideoFormatsForContainer(container, info.videoFormats, primaryFormats)
+  const candidates = filterVideoFormatsForContainer(container, info.videoFormats, primaryFormats).filter(
+    (format) => !info.hasMultipleAudioLanguages || !format.isProgressive
+  )
   if (candidates.length === 0) return null
 
-  const maxHeight = Math.max(...candidates.map((f) => f.height ?? 0))
+  const maxHeight = targetHeight ?? Math.max(...candidates.map((f) => f.height ?? 0))
   let pool = candidates.filter((f) => (f.height ?? 0) === maxHeight)
+  if (pool.length === 0) return null
   const maxFps = Math.max(...pool.map((f) => f.fps ?? 0))
   pool = pool.filter((f) => (f.fps ?? 0) === maxFps)
   const video = [...pool].sort((a, b) => {
@@ -159,6 +193,7 @@ export function FormatPicker({
 
   const [kind, setKind] = useState<DownloadKind>('video')
   const [bestMode, setBestMode] = useState<boolean>(settings.bestQualityMode)
+  const [selectedHeight, setSelectedHeight] = useState<number>(0)
   const [videoId, setVideoId] = useState<string>('')
   const [container, setContainer] = useState<VideoContainer>('mp4')
   // Video: multi-select track languages. Audio-only: single dropdown language.
@@ -174,6 +209,7 @@ export function FormatPicker({
     setKind(initialKind)
     setVideoId(info.videoFormats[0]?.formatId ?? '')
     setContainer(settings.preferredVideoContainer)
+    setSelectedHeight(Math.max(...info.videoFormats.map((format) => format.height ?? 0), 0))
     const initialKeys = initialLanguageKeys(info, settings)
     setLangKeys(initialKeys)
     setMoreLangsOpen(false)
@@ -232,32 +268,49 @@ export function FormatPicker({
     info.audioGroups[0] ??
     null
 
+  const qualityHeights = useMemo(
+    () => {
+      const measured = [...new Set(info.videoFormats.map((format) => format.height ?? 0).filter((height) => height > 0))]
+      const available = measured.length > 0 ? measured : info.videoFormats.length > 0 ? [0] : []
+      return available
+        .sort((a, b) => b - a)
+        .filter((height) =>
+          CONTAINERS.some((candidate) => !!bestRowFor(candidate, info, selectedGroups, height))
+        )
+    },
+    [info, selectedGroups]
+  )
+  const activeHeight = qualityHeights.includes(selectedHeight)
+    ? selectedHeight
+    : (qualityHeights[0] ?? 0)
+
   // One best row per achievable container, cheapest first — this is the
   // "give me the top quality, let me pick the smallest file" view.
   const bestRows = useMemo(() => {
-    const rows = CONTAINERS.map((c) => bestRowFor(c, info, selectedGroups)).filter(
+    const rows = CONTAINERS.map((c) => bestRowFor(c, info, selectedGroups, activeHeight)).filter(
       (r): r is BestRow => !!r
     )
-    rows.sort(
-      (a, b) =>
-        (a.totalSize ?? Number.POSITIVE_INFINITY) - (b.totalSize ?? Number.POSITIVE_INFINITY)
-    )
     return rows
-  }, [info, selectedGroups])
+  }, [info, selectedGroups, activeHeight])
 
-  const smallestBestKey = bestRows[0]?.container
+  const smallestBestKey = meaningfullySmallestContainer(bestRows)
+  const recommendedBestKey = recommendedContainer(
+    bestRows,
+    selectedGroups.length >= 2,
+    settings.preferredVideoContainer
+  )
 
   // Entering best mode (or analyzing new media while it is on) preselects the
   // smallest file that still has the highest quality.
   useEffect(() => {
     if (kind !== 'video' || !bestMode) return
-    const preferred = bestRows[0]
+    const preferred = bestRows.find((row) => row.container === recommendedBestKey) ?? bestRows[0]
     if (preferred) {
       setContainer(preferred.container)
       setVideoId(preferred.video.formatId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [info.id, bestMode, kind])
+  }, [info.id, bestMode, kind, activeHeight, recommendedBestKey])
 
   const selectBestRow = (row: BestRow): void => {
     setContainer(row.container)
@@ -446,7 +499,23 @@ export function FormatPicker({
 
           {bestMode ? (
             bestRows.length > 0 ? (
-              <div className="best-list" role="radiogroup" aria-label="Best quality per format">
+              <>
+                <div className="control-label">Quality</div>
+                <div className="quality-pill-grid" role="radiogroup" aria-label="Video quality">
+                  {qualityHeights.map((height) => (
+                    <button
+                      key={height}
+                      role="radio"
+                      aria-checked={height === activeHeight}
+                      className={`chip chip-sm ${height === activeHeight ? 'active' : ''}`}
+                      onClick={() => setSelectedHeight(height)}
+                    >
+                      {qualityTierLabel(height)}
+                    </button>
+                  ))}
+                </div>
+                <div className="control-label">File type</div>
+                <div className="best-list" role="radiogroup" aria-label="File type">
                 {bestRows.map((row) => {
                   const active = row.container === container
                   return (
@@ -480,11 +549,17 @@ export function FormatPicker({
                         {row.container === smallestBestKey && bestRows.length > 1 && (
                           <span className="tag tag-smallest">smallest</span>
                         )}
+                        {row.container === recommendedBestKey && (
+                          <span className="tag tag-recommended">
+                            {selectedGroups.length >= 2 ? 'recommended' : 'most compatible'}
+                          </span>
+                        )}
                       </span>
                     </button>
                   )
                 })}
-              </div>
+                </div>
+              </>
             ) : (
               <div className="empty-note">No downloadable video streams found for this link.</div>
             )

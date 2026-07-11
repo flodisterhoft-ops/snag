@@ -158,6 +158,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     ).then(sendResponse)
     return true
   }
+  if (message.type === 'snag:job') {
+    callSnag(`/jobs/${encodeURIComponent(message.jobId || '')}`, { method: 'GET' }, 3000).then(sendResponse)
+    return true
+  }
   if (message.type === 'snag:set-audio-favorites') {
     callSnag(
       '/preferences/audio-languages',

@@ -58,6 +58,8 @@ describe('download queue persistence', () => {
     const restored = manager.getJobs()
     expect(restored.map((item) => item.id)).toEqual(['done', 'waiting', 'interrupted'])
     expect(restored.find((item) => item.id === 'done')?.status).toBe('completed')
+    expect(manager.getJob('done')?.status).toBe('completed')
+    expect(manager.getJob('missing')).toBeNull()
     expect(restored.find((item) => item.id === 'waiting')?.status).toBe('queued')
     expect(restored.find((item) => item.id === 'interrupted')).toMatchObject({
       status: 'error',

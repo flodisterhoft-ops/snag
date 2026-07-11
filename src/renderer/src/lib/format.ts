@@ -7,7 +7,7 @@ export function formatBytes(bytes: number | null | undefined, approx = false): s
     n /= 1024
     i++
   }
-  const val = n >= 100 || i === 0 ? Math.round(n) : n.toFixed(1)
+  const val = n >= 100 || i === 0 ? Math.round(n) : i >= 3 ? n.toFixed(2) : n.toFixed(1)
   return `${approx ? '~' : ''}${val} ${units[i]}`
 }
 

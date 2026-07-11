@@ -1766,6 +1766,26 @@ select {
   flex-direction: column;
   gap: 9px;
 }
+
+.quality-pill-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 6px 0 12px;
+}
+
+.quality-pill-grid .chip {
+  justify-content: center;
+  min-height: 38px;
+}
+
+.tag-recommended {
+  display: block;
+  color: var(--accent);
+  font-size: 9.5px;
+  font-weight: 700;
+  margin-top: 2px;
+}
 .best-row {
   display: flex;
   align-items: center;

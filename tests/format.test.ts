@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDownloadSpeed } from '../src/renderer/src/lib/format'
+import { formatBytes, formatDownloadSpeed } from '../src/renderer/src/lib/format'
 
 describe('formatDownloadSpeed', () => {
   it('shows decimal megabytes and megabits for yt-dlp MiB values', () => {
@@ -12,5 +12,12 @@ describe('formatDownloadSpeed', () => {
 
   it('preserves an unknown speed format', () => {
     expect(formatDownloadSpeed('Unknown speed')).toBe('Unknown speed')
+  })
+})
+
+describe('formatBytes', () => {
+  it('shows enough precision to distinguish similar gigabyte estimates', () => {
+    expect(formatBytes(1.46 * 1024 ** 3, true)).toBe('~1.46 GB')
+    expect(formatBytes(1.49 * 1024 ** 3, true)).toBe('~1.49 GB')
   })
 })
