@@ -1,12 +1,13 @@
 import { app, BrowserWindow } from 'electron'
 import { resolve } from 'path'
 import { registerIpc } from './ipc'
-import { deepLinkFromArgv, PROTOCOL_SCHEME } from './protocol'
-import { ensureMainWindow, deliverExternalUrl } from './windows'
+import { deepLinkFromArgv, parseDeepLink, PROTOCOL_SCHEME } from './protocol'
+import { ensureMainWindow, deliverExternalUrl, publishUpdateAvailability } from './windows'
 import { createTray, setTrayActiveCount } from './tray'
 import { loadSettings } from './settings'
 import { downloadManager } from './downloader'
 import { checkForUpdates, shouldAutoCheck } from './updates'
+import { refreshInstalledBrowserExtension } from './extension'
 
 // Windows: needed for notifications to show the app identity/name correctly.
 if (process.platform === 'win32') {
@@ -21,13 +22,27 @@ if (process.defaultApp) {
     app.setAsDefaultProtocolClient(PROTOCOL_SCHEME, process.execPath, [resolve(process.argv[1])])
   }
 } else {
-  app.setAsDefaultProtocolClient(PROTOCOL_SCHEME)
+  // electron-builder portable apps run from a temporary extracted executable.
+  // Register the stable launcher the user actually opened, not that temp path.
+  const executable = process.env['PORTABLE_EXECUTABLE_FILE']?.trim() || process.execPath
+  app.setAsDefaultProtocolClient(PROTOCOL_SCHEME, executable)
 }
 
 function routeDeepLink(url: string): void {
   console.log('[snag] browser handoff:', url)
   deliverExternalUrl(url, loadSettings().browserHandoff)
 }
+
+// macOS delivers custom protocols through open-url rather than argv. Queue an
+// early event until BrowserWindow creation is legal.
+const pendingOpenUrls: string[] = []
+app.on('open-url', (event, rawUrl) => {
+  event.preventDefault()
+  const url = parseDeepLink(rawUrl)
+  if (!url) return
+  if (app.isReady()) routeDeepLink(url)
+  else pendingOpenUrls.push(url)
+})
 
 // Quit once the last download finishes if the user closed all windows and
 // doesn't want Snag lingering in the tray.
@@ -54,8 +69,14 @@ if (!gotLock) {
   })
 
   app.whenReady().then(() => {
+    downloadManager.initializePersistence()
     registerIpc()
     createTray(() => ensureMainWindow())
+
+    const extensionRefresh = refreshInstalledBrowserExtension()
+    if (extensionRefresh && !extensionRefresh.ok) {
+      console.error('[snag] Could not refresh the Chrome extension:', extensionRefresh.error)
+    }
 
     const updateTray = (): void => {
       const active = downloadManager
@@ -68,29 +89,38 @@ if (!gotLock) {
       updateTray()
       maybeQuitWhenIdle()
     })
+    updateTray()
 
     // Cold start via a protocol click opens only the window the handoff needs.
     const coldUrl = deepLinkFromArgv(process.argv)
     if (coldUrl) routeDeepLink(coldUrl)
-    else ensureMainWindow()
+    const queuedOpenUrls = pendingOpenUrls.splice(0)
+    for (const url of queuedOpenUrls) routeDeepLink(url)
+    if (!coldUrl && queuedOpenUrls.length === 0) ensureMainWindow()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) ensureMainWindow()
     })
 
-    // Daily update check, delayed so it never competes with startup work.
-    setTimeout(() => {
-      if (!shouldAutoCheck()) return
-      checkForUpdates()
-        .then((u) => {
-          if (u.app || u.ytdlp) {
-            for (const win of BrowserWindow.getAllWindows()) {
-              if (!win.isDestroyed()) win.webContents.send('updateAvailable', u)
-            }
-          }
-        })
-        .catch((err) => console.error('Update check failed:', err))
-    }, 5000)
+    // Re-evaluate periodically so a tray process left running for days still
+    // performs the next daily check. The initial delay avoids startup work.
+    let updateCheckRunning = false
+    const runAutomaticUpdateCheck = async (): Promise<void> => {
+      if (updateCheckRunning || !shouldAutoCheck()) return
+      updateCheckRunning = true
+      try {
+        const update = await checkForUpdates()
+        if (update.status === 'success' || update.app || update.ytdlp) {
+          publishUpdateAvailability(update)
+        }
+      } catch (err) {
+        console.error('Update check failed:', err)
+      } finally {
+        updateCheckRunning = false
+      }
+    }
+    setTimeout(() => void runAutomaticUpdateCheck(), 5000)
+    setInterval(() => void runAutomaticUpdateCheck(), 60 * 60 * 1000)
   })
 
   app.on('window-all-closed', () => {
@@ -99,4 +129,6 @@ if (!gotLock) {
       app.quit()
     }
   })
+
+  app.on('before-quit', () => downloadManager.shutdown())
 }

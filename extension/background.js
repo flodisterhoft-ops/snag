@@ -38,34 +38,38 @@ async function toggleSite(tab) {
     return
   }
   if (!host) return
-  const { disabledSites = [] } = await chrome.storage.sync.get('disabledSites')
+  const { disabledSites = [] } = await chrome.storage.local.get('disabledSites')
   const idx = disabledSites.indexOf(host)
   if (idx >= 0) disabledSites.splice(idx, 1)
   else disabledSites.push(host)
   // Content scripts on this site react via chrome.storage.onChanged.
-  await chrome.storage.sync.set({ disabledSites })
+  await chrome.storage.local.set({ disabledSites })
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
-    id: MENU_PAGE,
-    title: 'Download this page with Snag',
-    contexts: ['page']
-  })
-  chrome.contextMenus.create({
-    id: MENU_VIDEO,
-    title: 'Download this video with Snag',
-    contexts: ['video', 'audio']
-  })
-  chrome.contextMenus.create({
-    id: MENU_LINK,
-    title: 'Download link with Snag',
-    contexts: ['link']
-  })
-  chrome.contextMenus.create({
-    id: MENU_TOGGLE,
-    title: 'Show/hide Snag button on this site',
-    contexts: ['page', 'video']
+  // Recreate deterministically on extension updates; existing IDs otherwise
+  // make the onInstalled handler fail partway through.
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: MENU_PAGE,
+      title: 'Download this page with Snag',
+      contexts: ['page']
+    })
+    chrome.contextMenus.create({
+      id: MENU_VIDEO,
+      title: 'Download this video with Snag',
+      contexts: ['video', 'audio']
+    })
+    chrome.contextMenus.create({
+      id: MENU_LINK,
+      title: 'Download link with Snag',
+      contexts: ['link']
+    })
+    chrome.contextMenus.create({
+      id: MENU_TOGGLE,
+      title: 'Show/hide Snag button on this site',
+      contexts: ['page', 'video']
+    })
   })
 })
 

@@ -12,6 +12,11 @@ export function UpdateBanner(): JSX.Element | null {
 
   if (!updates || (!updates.app && !updates.ytdlp)) return null
 
+  const dismiss = (): void => {
+    void window.api.dismissUpdates()
+    setUpdates(null)
+  }
+
   const updateYtdlp = async (): Promise<void> => {
     setYtdlpBusy(true)
     setYtdlpError(null)
@@ -34,7 +39,7 @@ export function UpdateBanner(): JSX.Element | null {
       <div className="update-banner-head">
         <Icon name="sparkle" size={15} />
         <strong>Updates available</strong>
-        <button className="icon-btn" title="Later" onClick={() => setUpdates(null)}>
+        <button className="icon-btn" title="Later" onClick={dismiss}>
           <Icon name="close" size={14} />
         </button>
       </div>
@@ -74,7 +79,7 @@ export function UpdateBanner(): JSX.Element | null {
       )}
       {ytdlpError && <div className="update-error">{ytdlpError}</div>}
 
-      <button className="update-later" onClick={() => setUpdates(null)}>
+      <button className="update-later" onClick={dismiss}>
         Remind me later
       </button>
     </div>

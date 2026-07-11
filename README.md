@@ -34,16 +34,19 @@ A fast, beautiful video & audio downloader for Windows — powered by
 
 - **Every quality, every format.** Full quality table from 4K60 down to 144p with codec,
   container, and size — or audio-only as MP3, M4A, Opus, WAV, FLAC.
-- **One click from Chrome.** A little download button floats on every video; click it and
-  Snag's quick dialog pops up with the video already analyzed.
-- **Genuinely fast.** Up to 16 parallel connections per download, a one-click
-  *Maximum speed* preset, live speed in MB/s **and** Mbps.
+- **One click from Chrome.** An optional translucent button floats over supported HTML5
+  players; click it and Snag analyzes that page in its quick dialog.
+- **Fast where the stream supports it.** Up to 16 concurrent DASH/HLS fragments, a
+  one-click *Maximum speed* preset (one active download and eight fragments), and live
+  speed in MB/s **and** Mbps. Progressive single-file downloads may not get faster.
 - **Multi-language audio & subtitles.** Pick the audio track on multi-language videos;
   download or embed captions.
 - **Playlists.** Grab a single video or the whole playlist into its own folder.
-- **Stays out of your way.** Runs in the tray, download queue with pause/cancel/retry,
+- **Stays out of your way.** Runs in the tray, download queue with cancel/retry,
   desktop notification when done.
-- **No ads, no accounts, no telemetry.** 100% local, open source, MIT licensed.
+- **No ads, no accounts, no telemetry.** Analysis and file processing run on your PC.
+  Snag still connects to the URL's site to analyze/download media and, when automatic
+  update checks are enabled, to GitHub's release API.
 
 <div align="center">
 <img src="docs/queue.png" width="850" alt="Download queue with live progress" />
@@ -63,9 +66,9 @@ A fast, beautiful video & audio downloader for Windows — powered by
 
 ## 🧩 Snag for Chrome
 
-The companion extension puts Snag one click away on any video site:
+The companion extension puts Snag one click away on many video sites:
 
-- A **translucent download button** in the corner of every video
+- A **translucent download button** over eligible HTML5 video players
 - **Right-click menus** — download this page, this video, or any link
 - A **toolbar button** to send the current tab to Snag
 
@@ -75,14 +78,30 @@ Click any of them and the quick dialog appears — video analyzed, quality picke
 <img src="docs/quick.png" width="420" alt="Quick download dialog opened from the browser" />
 </div>
 
-**Install (one-time, ~30 seconds):** Chrome only auto-installs store extensions, so this
-one loads in developer mode:
+**Install as an unpacked extension:** Chrome only auto-installs store extensions, so this
+companion loads in developer mode:
 
-1. In Snag: **Settings → Browser integration → Install extension files** (copies the
-   extension to a stable folder and shows these same steps).
+1. In Snag: **Settings → Browser integration → Prepare extension folder** (copies the
+   extension to Snag's user-data folder and displays its exact path).
 2. Open `chrome://extensions`, switch on **Developer mode** (top-right).
-3. Click **Load unpacked** and pick the copied folder.
-4. First click: Chrome asks *"Open Snag?"* — tick **Always allow**.
+3. Click **Load unpacked**.
+4. Paste/navigate to the path shown by Snag, select the folder that directly contains
+   `manifest.json`, and click **Select Folder**.
+5. Reload video tabs that were already open so Chrome injects the newly loaded extension.
+6. First handoff: Chrome asks *"Open Snag?"* — optionally tick **Always allow**, then
+   click **Open Snag**.
+
+The overlay is translucent until hovered. It appears only over visible, normal HTML5
+`<video>` players at least 250 × 140 pixels and hides in fullscreen. It sends the
+**page or iframe URL**, not a `blob:` media source; yt-dlp decides whether that page is
+supported. DRM, browser-protected pages, closed shadow-DOM players, sandboxed frames,
+and some site CSS can prevent the overlay or the download. The toolbar and right-click
+actions remain useful fallbacks.
+
+The extension is copied, not installed from a store, so it does **not** auto-update.
+When a Snag release changes the companion extension, click **Refresh extension folder**
+in Snag and then **Reload** on its card in `chrome://extensions`. Per-site overlay choices
+are stored only in that browser profile, not synced to a Google account.
 
 Works the same in Edge and Brave. Full details in [extension/README.md](extension/README.md).
 
@@ -94,23 +113,29 @@ Works the same in Edge and Brave. Full details in [extension/README.md](extensio
 
 Default folder and filename pattern, parallel downloads, connection boost, bandwidth cap,
 preferred containers/formats, subtitle defaults, tray behavior, quick dialog vs. full app
-handoff — plus a built-in updater that checks for new Snag and yt-dlp releases about once
-a day and prompts you (update now or later, your call).
+handoff — plus an optional release checker. It checks GitHub roughly once a day; an app
+update opens Snag's GitHub release page, while a yt-dlp update can be applied in place.
+Snag does not silently install application updates.
 
 ## 🔨 Build from source
 
 ```powershell
 git clone https://github.com/flodisterhoft-ops/snag.git
 cd snag
-npm install
-npm run dev        # hot-reloading dev app
-npm test           # unit tests
-npm run dist       # installer + portable exe in ./dist
+npm ci                  # install exactly from package-lock.json
+npm run dev             # hot-reloading dev app
+npm test                # unit tests
+npm run typecheck       # TypeScript checks
+npm run validate:tools  # validate immutable tool pins and SHA-256 values
+npm run dist            # installer + portable exe in ./dist
 ```
 
-Dev builds use `yt-dlp`/`ffmpeg` from your PATH (`winget install yt-dlp ffmpeg`);
-packaged builds bundle both. `npm run dist` needs Windows **Developer Mode** (or an
-admin terminal) once, so electron-builder can extract its toolchain.
+Dev builds can use `yt-dlp`/`ffmpeg` from your PATH. `npm run dist` does **not** copy
+arbitrary PATH programs: it downloads the exact Windows x64 releases pinned in
+[`TOOLS_MANIFEST.json`](build/tools/TOOLS_MANIFEST.json), verifies every SHA-256 value,
+and fails if any byte differs. The resulting package includes both tools and their
+license/build notices. Windows **Developer Mode** (or an administrator terminal) may be
+needed once so electron-builder can extract its own packaging toolchain.
 
 ## ❓ FAQ
 
@@ -125,7 +150,8 @@ open source — audit it, build it yourself, or check the release binaries with 
 
 **A video fails to download?**
 Sites change constantly; yt-dlp updates almost weekly to keep up. Snag will prompt you
-when a yt-dlp update is available — or force it via **Settings → Engine → Update**.
+when a yt-dlp update is available — or check via **Settings → Engine → Update**. Snag's
+release checker needs GitHub access; an offline check cannot confirm that you are current.
 
 **Where are playlists saved?**
 In a subfolder named after the playlist, inside your chosen folder.
@@ -142,7 +168,15 @@ Snag is free and always will be. If it saves you time, a coffee keeps the update
 
 ## 📄 License
 
-[MIT](LICENSE) — do whatever you like, no warranty.
-Downloads are powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp) and
-[ffmpeg](https://ffmpeg.org/); see [THIRD_PARTY_TOOLS](build/tools/THIRD_PARTY_TOOLS.txt)
-for their licenses.
+Snag's own source is [MIT licensed](LICENSE). Downloads are powered by separate
+command-line programs: [yt-dlp](https://github.com/yt-dlp/yt-dlp) and
+[FFmpeg](https://ffmpeg.org/). The bundled gyan.dev FFmpeg build is **GPLv3**, not LGPL.
+Exact binary/source identifiers, hashes, and notices are in
+[`THIRD_PARTY_TOOLS.txt`](build/tools/THIRD_PARTY_TOOLS.txt),
+[`TOOLS_MANIFEST.json`](build/tools/TOOLS_MANIFEST.json), and
+[`SOURCE_COMPLIANCE.md`](build/tools/SOURCE_COMPLIANCE.md).
+
+If you redistribute Snag's packaged builds, read `SOURCE_COMPLIANCE.md` first: distributing
+the GPL FFmpeg executable also requires compliant access to its complete Corresponding
+Source, including its statically linked dependencies. The manifest and links identify
+the exact build but do not replace that source-distribution obligation.

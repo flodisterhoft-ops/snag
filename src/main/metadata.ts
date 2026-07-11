@@ -1,7 +1,13 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { languageLabel } from '@shared/languages'
-import { locateYtdlp, runYtdlpJson, cleanYtdlpError } from './ytdlp'
+import {
+  locateYtdlp,
+  runYtdlpJson,
+  cleanYtdlpError,
+  ytdlpRuntimeArgs,
+  ytdlpChildEnv
+} from './ytdlp'
 import type {
   MediaInfo,
   VideoFormat,
@@ -13,7 +19,7 @@ import type {
 
 const execFileP = promisify(execFile)
 
-interface RawFormat {
+export interface RawFormat {
   format_id: string
   ext?: string
   height?: number | null
@@ -86,16 +92,18 @@ function pickSize(f: RawFormat): { size: number | null; approx: boolean } {
 }
 
 function qualityLabel(f: RawFormat): string {
-  if (f.height) {
+  const resolution =
+    f.width && f.height ? Math.min(f.width, f.height) : f.height ?? f.width
+  if (resolution) {
     const fps = f.fps && f.fps >= 50 ? Math.round(f.fps).toString() : ''
-    return `${f.height}p${fps}`
+    return `${resolution}p${fps}`
   }
   if (f.format_note) return f.format_note
   if (f.resolution) return f.resolution
   return f.format_id
 }
 
-function parseVideoFormats(formats: RawFormat[]): VideoFormat[] {
+export function parseVideoFormats(formats: RawFormat[]): VideoFormat[] {
   const videos = formats.filter((f) => f.vcodec && f.vcodec !== 'none')
   const mapped: VideoFormat[] = videos.map((f) => {
     const { size, approx } = pickSize(f)
@@ -136,13 +144,56 @@ function parseVideoFormats(formats: RawFormat[]): VideoFormat[] {
   })
 }
 
-function parseAudioGroups(
+export function parseAudioGroups(
   formats: RawFormat[],
   primaryLanguage: string | null
 ): { groups: AudioLanguageGroup[]; multiLanguage: boolean } {
   const audios = formats.filter(
     (f) => f.acodec && f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none')
   )
+
+  // Some supported sites expose only progressive video+audio streams. Keep
+  // audio extraction available and let `bestaudio/best` choose the best muxed
+  // source instead of forcing the user to download video.
+  if (
+    audios.length === 0 &&
+    formats.some(
+      (f) =>
+        f.acodec &&
+        f.acodec !== 'none' &&
+        f.vcodec &&
+        f.vcodec !== 'none'
+    )
+  ) {
+    const language = primaryLanguage
+    return {
+      multiLanguage: false,
+      groups: [
+        {
+          language,
+          languageLabel: language ? languageLabel(language) : 'Original audio',
+          isDefault: true,
+          formats: [
+            {
+              // Empty intentionally: buildAudioArgs falls back to bestaudio/best.
+              formatId: '',
+              ext: '',
+              acodec: '',
+              abr: null,
+              asr: null,
+              audioChannels: null,
+              language,
+              languageLabel: languageLabel(language),
+              formatNote: 'from video',
+              filesize: null,
+              filesizeIsApprox: false,
+              qualityLabel: 'Audio from best available video'
+            }
+          ]
+        }
+      ]
+    }
+  }
 
   const mapped: AudioFormat[] = audios.map((f) => {
     const { size, approx } = pickSize(f)
@@ -242,8 +293,20 @@ async function getPlaylistInfo(
   try {
     const { stdout } = await execFileP(
       bin,
-      ['--flat-playlist', '-J', '--no-warnings', '--ignore-config', url],
-      { windowsHide: true, timeout: 25000, maxBuffer: 1024 * 1024 * 64 }
+      [
+        ...ytdlpRuntimeArgs(),
+        '--flat-playlist',
+        '-J',
+        '--no-warnings',
+        '--ignore-config',
+        url
+      ],
+      {
+        windowsHide: true,
+        timeout: 25000,
+        maxBuffer: 1024 * 1024 * 64,
+        env: ytdlpChildEnv()
+      }
     )
     const data = JSON.parse(stdout) as {
       _type?: string

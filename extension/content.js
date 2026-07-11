@@ -50,8 +50,9 @@
 
   function position(video, btn) {
     const rect = video.getBoundingClientRect()
-    btn.style.top = Math.max(rect.top + INSET, 4) + 'px'
-    btn.style.left = rect.right - BTN_SIZE - INSET + 'px'
+    btn.style.top = Math.min(Math.max(rect.top + INSET, 4), innerHeight - BTN_SIZE - 4) + 'px'
+    btn.style.left =
+      Math.min(Math.max(rect.right - BTN_SIZE - INSET, 4), innerWidth - BTN_SIZE - 4) + 'px'
   }
 
   function refresh() {
@@ -92,7 +93,7 @@
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'sync' && changes.disabledSites) {
+    if (area === 'local' && changes.disabledSites) {
       disabled = (changes.disabledSites.newValue || []).includes(HOST)
       schedule()
     }
@@ -108,7 +109,7 @@
   // Layout can shift without DOM mutations (player resizes, lazy CSS) — cheap heartbeat.
   setInterval(schedule, 800)
 
-  chrome.storage.sync
+  chrome.storage.local
     .get('disabledSites')
     .then(({ disabledSites = [] }) => {
       disabled = disabledSites.includes(HOST)

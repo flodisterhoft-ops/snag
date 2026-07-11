@@ -221,6 +221,7 @@ export function Toggle({
       aria-label={label}
       onClick={() => onChange(!checked)}
     >
+      {label && <span className="sr-only">{label}</span>}
       <span className="toggle-knob" />
     </button>
   )

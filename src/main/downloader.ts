@@ -1,9 +1,18 @@
-import { spawn, ChildProcess, execFile } from 'child_process'
+import { spawn, ChildProcess, execFileSync } from 'child_process'
 import { EventEmitter } from 'events'
-import { existsSync, readdirSync, unlinkSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync
+} from 'fs'
 import { basename, dirname, join } from 'path'
+import { app } from 'electron'
 import { loadSettings } from './settings'
-import { locateYtdlp, ffmpegDir, cleanYtdlpError } from './ytdlp'
+import { locateYtdlp, ffmpegDir, cleanYtdlpError, ytdlpChildEnv } from './ytdlp'
 import { buildDownloadArgs, PROGRESS_PREFIX } from './args'
 import { notifyComplete, notifyError } from './notify'
 import type { DownloadJob, DownloadRequest, ProgressUpdate } from '@shared/types'
@@ -36,14 +45,27 @@ function buildItemLabel(idx: string | undefined, count: string | undefined): str
   return null
 }
 
+export function parseRemuxDestination(line: string): string | null {
+  const match = line.match(/^\[(?:VideoRemuxer|VideoConvertor)\].*?Destination:\s+(.+)$/)
+  if (!match) return null
+  const path = match[1].trim()
+  return path.startsWith('"') && path.endsWith('"') ? path.slice(1, -1) : path
+}
+
 function killTree(proc: ChildProcess): void {
   if (!proc.pid) return
   try {
     if (process.platform === 'win32') {
       // yt-dlp spawns ffmpeg as a child; /T kills the whole tree.
-      execFile('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true })
+      execFileSync('taskkill', ['/pid', String(proc.pid), '/T', '/F'], {
+        windowsHide: true,
+        timeout: 5000,
+        stdio: 'ignore'
+      })
     } else {
-      proc.kill('SIGKILL')
+      // Downloads are spawned in their own process group below. Killing the
+      // group also terminates yt-dlp's ffmpeg children.
+      process.kill(-proc.pid, 'SIGKILL')
     }
   } catch {
     try {
@@ -61,6 +83,24 @@ export class DownloadManager extends EventEmitter {
   private procs = new Map<string, ChildProcess>()
   private canceled = new Set<string>()
   private destinations = new Map<string, string[]>()
+  private persistenceFile: string | null = null
+  private persistTimer: NodeJS.Timeout | null = null
+  private initialized = false
+  private shuttingDown = false
+
+  // Call once after Electron is ready. A path override keeps persistence
+  // independently testable without relying on Electron's userData directory.
+  initializePersistence(
+    file = join(app.getPath('userData'), 'jobs.json'),
+    startQueued = true
+  ): void {
+    if (this.initialized) return
+    this.initialized = true
+    this.persistenceFile = file
+    this.restoreJobs()
+    this.flushPersistence()
+    if (startQueued) this.pump()
+  }
 
   enqueue(request: DownloadRequest): DownloadJob {
     const job: DownloadJob = {
@@ -81,6 +121,7 @@ export class DownloadManager extends EventEmitter {
     this.order.push(job.id)
     this.queue.push(job.id)
     this.emit('added', job)
+    this.schedulePersistence()
     this.pump()
     return job
   }
@@ -136,6 +177,7 @@ export class DownloadManager extends EventEmitter {
     this.jobs.delete(id)
     this.order = this.order.filter((o) => o !== id)
     this.destinations.delete(id)
+    this.schedulePersistence()
   }
 
   clearCompleted(): void {
@@ -147,6 +189,7 @@ export class DownloadManager extends EventEmitter {
         this.destinations.delete(id)
       }
     }
+    this.schedulePersistence()
   }
 
   private activeCount(): number {
@@ -158,7 +201,44 @@ export class DownloadManager extends EventEmitter {
     return this.procs.size > 0 || this.queue.length > 0
   }
 
+  // Re-read the concurrency setting and start any newly available queue slots.
+  reschedule(): void {
+    this.pump()
+  }
+
+  cancelAll(): void {
+    for (const id of [...this.order]) {
+      const job = this.jobs.get(id)
+      if (job && (job.status === 'queued' || job.status === 'downloading' || job.status === 'processing')) {
+        this.cancel(id)
+      }
+    }
+  }
+
+  // Synchronous tree termination is deliberate: app.quit must not leave yt-dlp
+  // or ffmpeg running after Electron exits.
+  shutdown(): void {
+    if (this.shuttingDown) return
+    this.shuttingDown = true
+    this.queue = []
+    for (const [id, proc] of this.procs) {
+      this.canceled.add(id)
+      killTree(proc)
+      this.cleanupPartials(this.destinations.get(id) ?? [])
+      this.destinations.delete(id)
+      this.update(id, { status: 'canceled', speed: null, eta: null })
+    }
+    for (const id of this.order) {
+      const job = this.jobs.get(id)
+      if (job?.status === 'queued') {
+        this.update(id, { status: 'canceled', speed: null, eta: null })
+      }
+    }
+    this.flushPersistence()
+  }
+
   private pump(): void {
+    if (this.shuttingDown) return
     const settings = loadSettings()
     const limit = Math.max(1, Math.min(4, settings.parallelDownloads))
     while (this.activeCount() < limit && this.queue.length > 0) {
@@ -174,6 +254,7 @@ export class DownloadManager extends EventEmitter {
     const job = this.jobs.get(id)
     if (!job) return
     Object.assign(job, patch)
+    this.schedulePersistence()
     const u: ProgressUpdate = {
       id,
       status: job.status,
@@ -199,11 +280,19 @@ export class DownloadManager extends EventEmitter {
       return
     }
 
-    const args = buildDownloadArgs(job.request, settings, { ffmpegLocation: ffmpegDir() })
+    const args = buildDownloadArgs(job.request, settings, {
+      ffmpegLocation: ffmpegDir(),
+      nodeRuntimePath: process.execPath
+    })
 
     let child: ChildProcess
     try {
-      child = spawn(bin, args, { windowsHide: true })
+      child = spawn(bin, args, {
+        windowsHide: true,
+        // A separate Unix process group lets cancellation kill ffmpeg children too.
+        detached: process.platform !== 'win32',
+        env: ytdlpChildEnv()
+      })
     } catch (err) {
       this.update(job.id, { status: 'error', errorMessage: (err as Error).message })
       return
@@ -221,7 +310,10 @@ export class DownloadManager extends EventEmitter {
     const consume = (line: string): void => {
       const res = this.handleStdoutLine(job.id, line)
       if (res.destination) destinations.push(res.destination)
-      if (res.finalPath) finalPath = res.finalPath
+      if (res.finalPath) {
+        finalPath = res.finalPath
+        if (!destinations.includes(res.finalPath)) destinations.push(res.finalPath)
+      }
     }
 
     child.stdout?.setEncoding('utf-8')
@@ -304,6 +396,11 @@ export class DownloadManager extends EventEmitter {
       this.update(id, { status: 'processing', progress: 100 })
       return { finalPath: m[1].trim() }
     }
+    const remuxDestination = parseRemuxDestination(line)
+    if (remuxDestination) {
+      this.update(id, { status: 'processing', progress: 100 })
+      return { finalPath: remuxDestination }
+    }
     if ((m = line.match(/^\[download\]\s+(.+?)\s+has already been downloaded/))) {
       return { finalPath: m[1].trim() }
     }
@@ -355,6 +452,123 @@ export class DownloadManager extends EventEmitter {
         if (existsSync(file)) unlinkSync(file)
       } catch {
         /* best-effort cleanup */
+      }
+    }
+  }
+
+  private restoreJobs(): void {
+    if (!this.persistenceFile) return
+    const candidates = [this.persistenceFile, `${this.persistenceFile}.bak`]
+    let rawJobs: unknown[] | null = null
+    for (const file of candidates) {
+      try {
+        if (!existsSync(file)) continue
+        const parsed = JSON.parse(readFileSync(file, 'utf8')) as unknown
+        const jobs = Array.isArray(parsed)
+          ? parsed
+          : parsed && typeof parsed === 'object' && Array.isArray((parsed as { jobs?: unknown }).jobs)
+            ? (parsed as { jobs: unknown[] }).jobs
+            : null
+        if (jobs) {
+          rawJobs = jobs
+          break
+        }
+      } catch {
+        // Try the backup if the primary was interrupted or corrupted.
+      }
+    }
+    if (!rawJobs) return
+
+    const statuses = new Set([
+      'queued',
+      'downloading',
+      'processing',
+      'completed',
+      'error',
+      'canceled'
+    ])
+    for (const raw of rawJobs) {
+      if (!raw || typeof raw !== 'object') continue
+      const job = raw as DownloadJob
+      if (
+        typeof job.id !== 'string' ||
+        !job.request ||
+        typeof job.request !== 'object' ||
+        typeof job.request.url !== 'string' ||
+        typeof job.request.title !== 'string' ||
+        (job.request.kind !== 'video' && job.request.kind !== 'audio') ||
+        typeof job.request.saveDir !== 'string' ||
+        typeof job.request.selectionLabel !== 'string' ||
+        !statuses.has(job.status) ||
+        this.jobs.has(job.id)
+      ) {
+        continue
+      }
+
+      job.progress = Number.isFinite(job.progress)
+        ? Math.max(0, Math.min(100, job.progress))
+        : 0
+      job.speed = typeof job.speed === 'string' ? job.speed : null
+      job.eta = typeof job.eta === 'string' ? job.eta : null
+      job.sizeLabel = typeof job.sizeLabel === 'string' ? job.sizeLabel : null
+      job.itemLabel = typeof job.itemLabel === 'string' ? job.itemLabel : null
+      job.filepath = typeof job.filepath === 'string' ? job.filepath : null
+      job.errorMessage = typeof job.errorMessage === 'string' ? job.errorMessage : null
+      job.createdAt = Number.isFinite(job.createdAt) ? job.createdAt : Date.now()
+      job.completedAt = Number.isFinite(job.completedAt) ? job.completedAt : null
+
+      if (job.status === 'downloading' || job.status === 'processing') {
+        job.status = 'error'
+        job.errorMessage = 'Snag closed before this download finished. Retry to download it again.'
+        job.speed = null
+        job.eta = null
+        job.completedAt = Date.now()
+      } else if (job.status === 'queued') {
+        job.progress = 0
+        job.speed = null
+        job.eta = null
+        this.queue.push(job.id)
+      }
+      this.jobs.set(job.id, job)
+      this.order.push(job.id)
+    }
+  }
+
+  private schedulePersistence(): void {
+    if (!this.persistenceFile || this.shuttingDown) return
+    if (this.persistTimer) clearTimeout(this.persistTimer)
+    this.persistTimer = setTimeout(() => this.flushPersistence(), 300)
+    this.persistTimer.unref()
+  }
+
+  private flushPersistence(): void {
+    if (!this.persistenceFile) return
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer)
+      this.persistTimer = null
+    }
+
+    const file = this.persistenceFile
+    const temp = `${file}.tmp`
+    const backup = `${file}.bak`
+    try {
+      mkdirSync(dirname(file), { recursive: true })
+      const jobs = this.order
+        .map((id) => this.jobs.get(id))
+        .filter((job): job is DownloadJob => !!job)
+      writeFileSync(temp, JSON.stringify({ version: 1, jobs }), 'utf8')
+
+      // Two atomic renames plus a recoverable backup avoid partially written JSON.
+      if (existsSync(backup)) unlinkSync(backup)
+      if (existsSync(file)) renameSync(file, backup)
+      renameSync(temp, file)
+      if (existsSync(backup)) unlinkSync(backup)
+    } catch {
+      // Best effort. If replacing the primary failed, the backup remains readable.
+      try {
+        if (existsSync(temp)) unlinkSync(temp)
+      } catch {
+        /* ignore */
       }
     }
   }

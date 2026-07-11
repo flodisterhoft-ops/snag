@@ -750,6 +750,7 @@ select {
 .panel-controls {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -759,6 +760,15 @@ select {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-3);
+}
+.format-best {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.format-best strong {
+  color: var(--accent);
+  font-family: var(--font-display);
 }
 
 /* format table */
@@ -856,6 +866,10 @@ select {
 .tag-hdr {
   background: rgba(255, 180, 84, 0.18);
   color: var(--amber);
+}
+.tag-4k {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .empty-note {
   padding: 22px;
@@ -1082,6 +1096,18 @@ select {
   border-radius: 50%;
   background: #e9ecef;
   transition: transform 0.18s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 .toggle.on .toggle-knob {
   transform: translateX(18px);

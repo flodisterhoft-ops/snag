@@ -2,14 +2,14 @@
 
 Companion extension for the [Snag](../README.md) downloader. It adds:
 
-- A **download button** floating over videos on any site (always visible, top-right corner)
+- A translucent **download button** over supported, visible HTML5 video players
 - A **toolbar button** that sends the current page to Snag
 - **Right-click menus**: download this page / this video / a link with Snag
 - A per-site off switch: right-click → *Show/hide Snag button on this site*
 
 Everything is handed to the Snag desktop app through `snag://` links — the
-extension itself downloads nothing, so it stays tiny and never needs updating
-in step with the app.
+extension itself downloads nothing. Its per-site preference is stored locally
+in Chrome and is not synced to a Google account.
 
 ## Install (unpacked)
 
@@ -17,18 +17,32 @@ Chrome only allows store extensions to install normally, so this one loads in
 developer mode — a one-time, ~30-second setup:
 
 1. Install and launch the **Snag** desktop app first (it registers the
-   `snag://` link type). In Snag: *Settings → Browser integration → Install
-   extension files*, or just use this folder directly.
+   `snag://` link type). In Snag, open *Settings → Browser integration → Prepare
+   extension folder*. Snag copies the files to its user-data folder and displays
+   the exact folder path. Repository builds can use this `extension` folder directly.
 2. Open `chrome://extensions` in Chrome.
 3. Turn on **Developer mode** (toggle in the top-right corner).
-4. Click **Load unpacked** and pick this folder.
+4. Click **Load unpacked**, navigate to the path shown by Snag, and select the
+   folder that directly contains `manifest.json`.
+5. Reload video tabs that were already open so Chrome injects the new extension.
 
-The first time you click a Snag button, Chrome asks *"Open Snag?"* — tick
-*Always allow* and it never asks again.
+The first time you click a Snag button, Chrome asks *"Open Snag?"*. If Chrome
+offers an *Always allow* option, select it to skip that prompt next time.
 
 > **Notes**
+> - Unpacked extensions do not auto-update. When a Snag release changes the
+>   companion, first click **Refresh extension folder** in Snag, then open
+>   `chrome://extensions` and click **Reload** on "Snag for Chrome".
 > - Chrome may occasionally show a "disable developer mode extensions" notice
 >   at startup. It's dismissible and harmless.
-> - The button sends the **page URL** to Snag; whether the video can actually be
->   downloaded is decided by yt-dlp (over 1000 sites supported).
+> - The button is translucent until hovered, is hidden in fullscreen, and sends
+>   the **page or iframe URL**, not the video's often-useless `blob:` source.
+>   Whether the page can be downloaded is decided by yt-dlp.
+> - The overlay appears on normal, visible HTML video players at least 250 x 140
+>   pixels. Browser-protected pages and players hidden inside closed shadow DOMs
+>   cannot be modified by an extension. DRM, sandboxed frames, and site CSS may
+>   also block the overlay or download. The toolbar and right-click actions are
+>   fallbacks on those sites.
+> - Per-site show/hide choices use `chrome.storage.local`; they stay in that
+>   browser profile and are not synced to a Google account.
 > - Works in Edge/Brave/other Chromium browsers the same way (`edge://extensions` etc.).

@@ -1,12 +1,120 @@
 import { app } from 'electron'
-import { copyFileSync, existsSync, mkdirSync } from 'fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'fs'
 import { join, delimiter, dirname } from 'path'
-import { execFile } from 'child_process'
-import { promisify } from 'util'
+import { execFileSync, spawn, type ChildProcess } from 'child_process'
 import type { ToolStatus } from '@shared/types'
+import { compareVersions } from './version'
 
-const execFileP = promisify(execFile)
 const isWin = process.platform === 'win32'
+const VERSION_TIMEOUT_MS = 5000
+const UPDATE_TIMEOUT_MS = 120000
+const ANALYZE_TIMEOUT_MS = 60000
+
+// Modern YouTube extraction requires an external JavaScript runtime. Electron
+// already ships a current Node runtime, so reuse it instead of making every
+// Snag user install Deno separately. ELECTRON_RUN_AS_NODE makes the packaged
+// Snag executable behave like the Node CLI when yt-dlp launches it.
+export function ytdlpRuntimeArgs(runtimePath: string = process.execPath): string[] {
+  return ['--no-js-runtimes', '--js-runtimes', `node:${runtimePath}`]
+}
+
+export function ytdlpChildEnv(
+  baseEnv: NodeJS.ProcessEnv = process.env
+): NodeJS.ProcessEnv {
+  return { ...baseEnv, ELECTRON_RUN_AS_NODE: '1' }
+}
+
+interface ExecFailure extends Error {
+  stdout?: string
+  stderr?: string
+  timedOut?: boolean
+}
+
+function killProcessTree(child: ChildProcess): void {
+  if (!child.pid) return
+  try {
+    if (isWin) {
+      execFileSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+        windowsHide: true,
+        timeout: 5000,
+        stdio: 'ignore'
+      })
+    } else {
+      // Bounded spawns below create a process group on Unix so descendants are not orphaned.
+      process.kill(-child.pid, 'SIGKILL')
+    }
+  } catch {
+    try {
+      child.kill('SIGKILL')
+    } catch {
+      /* already exited */
+    }
+  }
+}
+
+function execFileBounded(
+  bin: string,
+  args: string[],
+  timeoutMs: number,
+  maxBuffer: number,
+  env?: NodeJS.ProcessEnv
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    let timer: NodeJS.Timeout | undefined
+    let timedOut = false
+    let settled = false
+    let stdout = ''
+    let stderr = ''
+    const child = spawn(bin, args, {
+      windowsHide: true,
+      detached: !isWin,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+
+    const finishError = (message: string): void => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      const failure = new Error(message) as ExecFailure
+      failure.stdout = stdout
+      failure.stderr = stderr
+      failure.timedOut = timedOut
+      reject(failure)
+    }
+    const append = (target: 'stdout' | 'stderr', chunk: Buffer): void => {
+      if (target === 'stdout') stdout += chunk.toString('utf8')
+      else stderr += chunk.toString('utf8')
+      if (Buffer.byteLength(stdout) + Buffer.byteLength(stderr) > maxBuffer) {
+        killProcessTree(child)
+        finishError('yt-dlp produced more output than Snag can safely process.')
+      }
+    }
+
+    child.stdout?.on('data', (chunk: Buffer) => append('stdout', chunk))
+    child.stderr?.on('data', (chunk: Buffer) => append('stderr', chunk))
+    child.on('error', (error) => finishError(error.message))
+    child.on('close', (code, signal) => {
+      if (settled) return
+      if (timer) clearTimeout(timer)
+      if (timedOut) {
+        finishError('yt-dlp timed out.')
+      } else if (code !== 0) {
+        finishError(`yt-dlp exited with code ${code ?? signal ?? 'unknown'}.`)
+      } else {
+        settled = true
+        resolve({ stdout, stderr })
+      }
+    })
+    timer = setTimeout(() => {
+      timedOut = true
+      killProcessTree(child)
+      // Reject even if the OS cannot deliver a close event after termination.
+      finishError('yt-dlp timed out.')
+    }, timeoutMs)
+    timer.unref()
+  })
+}
 
 function exeNames(base: string): string[] {
   // Only match the PE executable: .cmd/.bat shims can't be launched via
@@ -46,12 +154,58 @@ function managedYtdlp(): string {
   return join(app.getPath('userData'), 'tools', isWin ? 'yt-dlp.exe' : 'yt-dlp')
 }
 
+function readVersionSync(bin: string): string | null {
+  try {
+    const stdout = execFileSync(bin, ['--version'], {
+      windowsHide: true,
+      timeout: VERSION_TIMEOUT_MS,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
+    return stdout.trim() || null
+  } catch {
+    return null
+  }
+}
+
+function bundledYtdlpVersion(): string | null {
+  try {
+    const manifest = JSON.parse(
+      readFileSync(join(process.resourcesPath, 'tools', 'TOOLS_MANIFEST.json'), 'utf8')
+    ) as { tools?: { id?: string; version?: string }[] }
+    const version = manifest.tools?.find((tool) => tool.id === 'yt-dlp')?.version
+    return typeof version === 'string' && version.trim() ? version.trim() : null
+  } catch {
+    return null
+  }
+}
+
+export function preferManagedYtdlp(
+  managedVersion: string | null,
+  bundledVersion: string | null
+): boolean {
+  if (!managedVersion) return false
+  if (!bundledVersion) return true
+  return compareVersions(managedVersion, bundledVersion) >= 0
+}
+
 export function locateYtdlp(override?: string | null): string | null {
   if (override && existsSync(override)) return override
   if (cachedYtdlp === undefined) {
     const managed = managedYtdlp()
-    cachedYtdlp =
-      (existsSync(managed) ? managed : null) || bundledTool('yt-dlp') || which('yt-dlp')
+    const bundled = bundledTool('yt-dlp')
+    const hasManaged = existsSync(managed)
+
+    // An updateable per-user copy may be newer than the bundled build, but must
+    // not permanently shadow a newer executable delivered by a Snag upgrade.
+    if (hasManaged && bundled) {
+      const bundledVersion = bundledYtdlpVersion() || readVersionSync(bundled)
+      cachedYtdlp = preferManagedYtdlp(readVersionSync(managed), bundledVersion)
+        ? managed
+        : bundled
+    } else {
+      cachedYtdlp = (hasManaged ? managed : null) || bundled || which('yt-dlp')
+    }
   }
   return cachedYtdlp
 }
@@ -77,7 +231,7 @@ export async function getYtdlpVersion(override?: string | null): Promise<string 
   const bin = locateYtdlp(override)
   if (!bin) return null
   try {
-    const { stdout } = await execFileP(bin, ['--version'], { windowsHide: true, timeout: 5000 })
+    const { stdout } = await execFileBounded(bin, ['--version'], VERSION_TIMEOUT_MS, 1024 * 1024)
     return stdout.trim() || null
   } catch {
     return null
@@ -121,13 +275,24 @@ export async function updateYtdlp(
     }
   }
   try {
-    const { stdout, stderr } = await execFileP(bin, ['-U'], {
-      windowsHide: true,
-      maxBuffer: 1024 * 1024 * 8
-    })
+    const { stdout, stderr } = await execFileBounded(
+      bin,
+      ['-U'],
+      UPDATE_TIMEOUT_MS,
+      1024 * 1024 * 8
+    )
     return { ok: true, output: (stdout + stderr).trim() }
   } catch (err) {
-    const e = err as { stdout?: string; stderr?: string; message?: string }
+    const e = err as ExecFailure
+    // Re-evaluate the managed copy after a failed self-update in case yt-dlp
+    // exited while replacing its executable.
+    if (!override) cachedYtdlp = undefined
+    if (e.timedOut) {
+      return {
+        ok: false,
+        output: 'The yt-dlp update timed out after 2 minutes. Check your connection and try again.'
+      }
+    }
     return { ok: false, output: (e.stdout || '') + (e.stderr || e.message || 'Update failed.') }
   }
 }
@@ -144,13 +309,19 @@ export async function runYtdlpJson(
     )
   }
   try {
-    const { stdout } = await execFileP(bin, args, {
-      windowsHide: true,
-      maxBuffer: 1024 * 1024 * 128 // metadata JSON can be large
-    })
+    const { stdout } = await execFileBounded(
+      bin,
+      [...ytdlpRuntimeArgs(), ...args],
+      ANALYZE_TIMEOUT_MS,
+      1024 * 1024 * 128, // metadata JSON can be large
+      ytdlpChildEnv()
+    )
     return JSON.parse(stdout)
   } catch (err) {
-    const e = err as { stderr?: string; message?: string }
+    const e = err as ExecFailure
+    if (e.timedOut) {
+      throw new Error('Analysis timed out after 60 seconds. Check your connection and try again.')
+    }
     throw new Error(cleanYtdlpError(e.stderr || e.message || 'Unknown error'))
   }
 }
@@ -175,6 +346,15 @@ export function cleanYtdlpError(stderr: string): string {
   if (/not available in your country|geo|blocked it in your country/i.test(msg))
     return 'This video is not available in your region.'
   if (/Video unavailable/i.test(msg)) return 'This video is unavailable.'
+  if (/HTTP Error 404|404:\s*Not Found/i.test(msg))
+    return 'The page or video could not be found (HTTP 404).'
+  if (/HTTP Error 403|403:\s*Forbidden/i.test(msg))
+    return 'The site refused access (HTTP 403). Update yt-dlp, then try again.'
+  if (
+    /Unable to download webpage/i.test(msg) &&
+    /timed out|temporary failure|name resolution/i.test(msg)
+  )
+    return 'The site could not be reached. Check your connection and try again.'
   if (/Requested format is not available/i.test(msg))
     return 'The selected format is no longer available. Try analyzing the link again.'
   if (/ffmpeg/i.test(msg) && /not found|not installed/i.test(msg))

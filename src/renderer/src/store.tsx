@@ -56,7 +56,7 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
   const [settings, setSettings] = useState<Settings | null>(null)
   const [jobs, setJobs] = useState<DownloadJob[]>([])
   const [toolStatus, setToolStatus] = useState<ToolStatus | null>(null)
-  const [handoffUrl, setHandoffUrl] = useState<string | null>(null)
+  const [handoffUrls, setHandoffUrls] = useState<string[]>([])
   const [updates, setUpdates] = useState<UpdateAvailability | null>(null)
   const jobsRef = useRef<DownloadJob[]>([])
   jobsRef.current = jobs
@@ -101,20 +101,21 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
       if (mounted) setJobs((prev) => applyProgressUpdate(prev, u))
     })
 
-    // Browser handoff: pull the URL that may have arrived before this renderer
-    // mounted, then listen for pushes while the window stays open.
+    // Register push listeners before telling main that this renderer is ready.
+    // Keep a FIFO locally too, so rapid browser clicks are not collapsed into a
+    // single React state update.
     const receiveUrl = (url: string): void => {
       if (!mounted || !url) return
-      setHandoffUrl(url)
+      setHandoffUrls((prev) => [...prev, url])
       setView('home')
     }
-    void window.api.consumePendingExternalUrl().then((url) => {
-      if (url) receiveUrl(url)
-    })
     const offExternal = window.api.onExternalUrl(receiveUrl)
-
     const offUpdates = window.api.onUpdateAvailable((u: UpdateAvailability) => {
       if (mounted) setUpdates(u)
+    })
+
+    void window.api.consumePendingExternalUrl().then((url) => {
+      if (url) receiveUrl(url)
     })
 
     return () => {
@@ -165,8 +166,8 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
     activeCount,
     toolStatus,
     refreshTools,
-    handoffUrl,
-    clearHandoffUrl: () => setHandoffUrl(null),
+    handoffUrl: handoffUrls[0] ?? null,
+    clearHandoffUrl: () => setHandoffUrls((prev) => prev.slice(1)),
     updates,
     setUpdates
   }

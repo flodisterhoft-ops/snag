@@ -169,10 +169,15 @@ export interface Settings {
   lastUpdateCheck: number
 }
 
-// What the update check found; null per slot means up to date (or unknown).
+export type UpdateCheckStatus = 'success' | 'partial' | 'error'
+
+// What the update check found. A null slot means up to date only when status is
+// "success"; partial/error preserve the distinction between current and unknown.
 export interface UpdateAvailability {
+  status: UpdateCheckStatus
   app: { current: string; latest: string; url: string } | null
   ytdlp: { current: string; latest: string } | null
+  error: string | null
 }
 
 export interface ExtensionInstallResult {
@@ -207,8 +212,8 @@ export interface Api {
   getSettings: () => Promise<Settings>
   setSettings: (patch: Partial<Settings>) => Promise<Settings>
   pickFolder: (current?: string) => Promise<string | null>
-  openPath: (target: string) => Promise<void>
-  showInFolder: (target: string) => Promise<void>
+  openPath: (target: string) => Promise<string>
+  showInFolder: (target: string) => Promise<string>
   readClipboard: () => Promise<string>
   getToolStatus: () => Promise<ToolStatus>
   updateYtdlp: () => Promise<{ ok: boolean; output: string }>
@@ -222,5 +227,6 @@ export interface Api {
   getBrowserExtensionPath: () => Promise<string | null>
   // Updates
   checkForUpdates: () => Promise<UpdateAvailability>
+  dismissUpdates: () => Promise<void>
   onUpdateAvailable: (cb: (u: UpdateAvailability) => void) => () => void
 }

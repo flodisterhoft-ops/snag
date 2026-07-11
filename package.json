@@ -1,6 +1,6 @@
 {
   "name": "snag",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "description": "Snag — a simple, powerful video & audio downloader powered by yt-dlp",
   "author": "Julia",
   "license": "MIT",
@@ -13,6 +13,7 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "validate:tools": "node scripts/prepare-tools.mjs --validate-manifest",
     "prepare:tools": "node scripts/prepare-tools.mjs",
     "dist": "npm run prepare:tools && electron-vite build && electron-builder --win",
     "dist:dir": "npm run prepare:tools && electron-vite build && electron-builder --win --dir"

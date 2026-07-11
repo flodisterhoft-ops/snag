@@ -9,7 +9,7 @@ import { shortPath } from '../lib/format'
 // Compact browser-handoff dialog: analyze the handed-off link, confirm format
 // and folder, download, close. Playlists and subtitles stay in the full app.
 export function QuickApp(): JSX.Element {
-  const { ready, startupError, settings, handoffUrl, clearHandoffUrl } = useStore()
+  const { ready, startupError, settings, updateSettings, handoffUrl, clearHandoffUrl } = useStore()
 
   const [url, setUrl] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
@@ -18,7 +18,10 @@ export function QuickApp(): JSX.Element {
   const [selection, setSelection] = useState<FormatSelection | null>(null)
   const [saveDir, setSaveDir] = useState('')
   const [done, setDone] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const closeTimer = useRef<number | null>(null)
+  const analysisRequest = useRef(0)
+  const submittingRef = useRef(false)
 
   useEffect(() => {
     if (settings && !saveDir) setSaveDir(settings.defaultSaveDir)
@@ -34,21 +37,35 @@ export function QuickApp(): JSX.Element {
 
   useEffect(() => {
     return () => {
+      analysisRequest.current += 1
       if (closeTimer.current != null) window.clearTimeout(closeTimer.current)
     }
   }, [])
 
   const runAnalyze = async (target: string): Promise<void> => {
+    const requestId = ++analysisRequest.current
+    if (closeTimer.current != null) {
+      window.clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
     setUrl(target)
     setAnalyzing(true)
     setError(null)
     setInfo(null)
     setSelection(null)
     setDone(false)
-    const res = await window.api.analyze(target)
-    setAnalyzing(false)
-    if (res.ok && res.info) setInfo(res.info)
-    else setError(res.error ?? 'Could not read this link.')
+    try {
+      const res = await window.api.analyze(target)
+      if (requestId !== analysisRequest.current) return
+      if (res.ok && res.info) setInfo(res.info)
+      else setError(res.error ?? 'Could not read this link.')
+    } catch (err) {
+      if (requestId === analysisRequest.current) {
+        setError((err as Error).message || 'Could not read this link.')
+      }
+    } finally {
+      if (requestId === analysisRequest.current) setAnalyzing(false)
+    }
   }
 
   const changeFolder = async (): Promise<void> => {
@@ -62,7 +79,10 @@ export function QuickApp(): JSX.Element {
   }
 
   const startDownload = async (): Promise<void> => {
-    if (!info || !selection || !selection.valid || !saveDir) return
+    if (!info || !selection || !selection.valid || !saveDir || submittingRef.current) return
+    submittingRef.current = true
+    setSubmitting(true)
+    setError(null)
     const request: DownloadRequest = {
       url: info.url,
       title: info.title,
@@ -76,12 +96,31 @@ export function QuickApp(): JSX.Element {
       saveDir,
       selectionLabel: selection.selectionLabel
     }
-    await window.api.enqueue(request)
-    setDone(true)
-    closeTimer.current = window.setTimeout(() => window.close(), 2400)
+    try {
+      await window.api.enqueue(request)
+      if (settings?.rememberLastChoices && settings.lastKind !== selection.kind) {
+        try {
+          await updateSettings({ lastKind: selection.kind })
+        } catch (err) {
+          console.error('Could not remember the selected download type:', err)
+        }
+      }
+      setDone(true)
+      closeTimer.current = window.setTimeout(() => window.close(), 2400)
+    } catch (err) {
+      setError((err as Error).message || 'Could not add this download. Please try again.')
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
   }
 
-  const canDownload = !!info && !!selection?.valid && !!saveDir && !analyzing
+  const openSnagAfterDownload = async (): Promise<void> => {
+    await window.api.openInMainWindow('')
+    window.close()
+  }
+
+  const canDownload = !!info && !!selection?.valid && !!saveDir && !analyzing && !submitting
 
   return (
     <div className="quick-app">
@@ -120,7 +159,7 @@ export function QuickApp(): JSX.Element {
             <strong>Added to your downloads</strong>
             <span className="quick-done-sub">Snag keeps downloading in the background.</span>
             <div className="quick-done-actions">
-              <button className="btn-outline" onClick={() => window.api.openInMainWindow('')}>
+              <button className="btn-outline" onClick={() => void openSnagAfterDownload()}>
                 Open Snag
               </button>
               <button className="btn-accent" onClick={() => window.close()}>
@@ -175,9 +214,9 @@ export function QuickApp(): JSX.Element {
                 <span className="folder-change">Change</span>
               </button>
               <button className="btn-accent btn-download" onClick={startDownload} disabled={!canDownload}>
-                <Icon name="download" size={17} />
+                {submitting ? <Spinner size={17} /> : <Icon name="download" size={17} />}
                 <span className="btn-download-label">
-                  Download
+                  {submitting ? 'Adding…' : 'Download'}
                   {selection?.selectionLabel && (
                     <span className="btn-download-sub">{selection.selectionLabel}</span>
                   )}
