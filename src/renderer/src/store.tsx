@@ -33,6 +33,7 @@ interface Store {
   activeCount: number
   toolStatus: ToolStatus | null
   refreshTools: () => Promise<void>
+  appVersion: string | null
   // URL handed off from the browser via snag://, waiting to be analyzed.
   handoffUrl: string | null
   clearHandoffUrl: () => void
@@ -56,6 +57,7 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
   const [settings, setSettings] = useState<Settings | null>(null)
   const [jobs, setJobs] = useState<DownloadJob[]>([])
   const [toolStatus, setToolStatus] = useState<ToolStatus | null>(null)
+  const [appVersion, setAppVersion] = useState<string | null>(null)
   const [handoffUrls, setHandoffUrls] = useState<string[]>([])
   const [updates, setUpdates] = useState<UpdateAvailability | null>(null)
   const jobsRef = useRef<DownloadJob[]>([])
@@ -64,11 +66,15 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
   const initialize = useCallback(async (): Promise<void> => {
     setReady(false)
     setStartupError(null)
-    const [settingsResult, jobsResult, toolsResult] = await Promise.allSettled([
+    const [settingsResult, jobsResult, toolsResult, versionResult] = await Promise.allSettled([
       window.api.getSettings(),
       window.api.getJobs(),
-      window.api.getToolStatus()
+      window.api.getToolStatus(),
+      window.api.getAppVersion()
     ])
+
+    if (versionResult.status === 'fulfilled') setAppVersion(versionResult.value)
+    else console.error('Failed to read app version:', versionResult.reason)
 
     if (settingsResult.status === 'fulfilled') {
       setSettings(settingsResult.value)
@@ -166,6 +172,7 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
     activeCount,
     toolStatus,
     refreshTools,
+    appVersion,
     handoffUrl: handoffUrls[0] ?? null,
     clearHandoffUrl: () => setHandoffUrls((prev) => prev.slice(1)),
     updates,

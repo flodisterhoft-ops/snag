@@ -4,7 +4,7 @@ import { Home } from './screens/Home'
 import { Queue } from './screens/Queue'
 import { SettingsScreen } from './screens/Settings'
 import { QuickApp } from './screens/Quick'
-import { UpdateBanner } from './components/UpdateBanner'
+import { UpdateModal } from './components/UpdateModal'
 import { Spinner } from './components/ui'
 
 // The quick-download window loads the same bundle with a #quick hash.
@@ -41,7 +41,7 @@ export default function App(): JSX.Element {
           <SettingsScreen />
         )}
       </main>
-      <UpdateBanner />
+      <UpdateModal />
     </div>
   )
 }

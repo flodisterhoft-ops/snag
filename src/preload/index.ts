@@ -23,6 +23,7 @@ const api: Api = {
   showInFolder: (target: string) => ipcRenderer.invoke('showInFolder', target),
   readClipboard: () => ipcRenderer.invoke('readClipboard'),
   getToolStatus: () => ipcRenderer.invoke('getToolStatus'),
+  getAppVersion: () => ipcRenderer.invoke('getAppVersion'),
   updateYtdlp: () => ipcRenderer.invoke('updateYtdlp'),
   onProgress: (cb: (u: ProgressUpdate) => void) => {
     const listener = (_e: IpcRendererEvent, u: ProgressUpdate): void => cb(u)

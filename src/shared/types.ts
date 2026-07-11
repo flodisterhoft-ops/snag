@@ -231,6 +231,7 @@ export interface Api {
   showInFolder: (target: string) => Promise<string>
   readClipboard: () => Promise<string>
   getToolStatus: () => Promise<ToolStatus>
+  getAppVersion: () => Promise<string>
   updateYtdlp: () => Promise<{ ok: boolean; output: string }>
   onProgress: (cb: (u: ProgressUpdate) => void) => () => void
   onJobAdded: (cb: (j: DownloadJob) => void) => () => void

@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import { ReactNode, useEffect } from 'react'
 
 type IconName =
   | 'download'
@@ -19,6 +19,9 @@ type IconName =
   | 'link'
   | 'spinner'
   | 'sparkle'
+  | 'info'
+  | 'heart'
+  | 'github'
 
 const PATHS: Record<IconName, ReactNode> = {
   download: (
@@ -137,6 +140,19 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="m18 6-2.5 2.5" />
       <path d="m8.5 15.5-2.5 2.5" />
     </>
+  ),
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5" />
+      <path d="M12 8h.01" />
+    </>
+  ),
+  heart: (
+    <path d="M12 20s-7-4.5-9.5-9A4.5 4.5 0 0 1 12 6a4.5 4.5 0 0 1 9.5 5c-2.5 4.5-9.5 9-9.5 9z" />
+  ),
+  github: (
+    <path d="M9 19c-4 1.5-4-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12 12 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" />
   )
 }
 
@@ -224,5 +240,56 @@ export function Toggle({
       {label && <span className="sr-only">{label}</span>}
       <span className="toggle-knob" />
     </button>
+  )
+}
+
+// Centered pop-up dialog with a dimmed backdrop. Closes on Esc, on backdrop
+// click, and via the header's close button. `icon`/`title` render the header.
+export function Modal({
+  open,
+  onClose,
+  title,
+  icon,
+  children,
+  size = 'md'
+}: {
+  open: boolean
+  onClose: () => void
+  title: ReactNode
+  icon?: IconName
+  children: ReactNode
+  size?: 'sm' | 'md'
+}): JSX.Element | null {
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
+  if (!open) return null
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className={`modal modal-${size} fade-up`}
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-head">
+          <span className="modal-title">
+            {icon && <Icon name={icon} size={18} />}
+            {title}
+          </span>
+          <button className="icon-btn" title="Close" onClick={onClose}>
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+        <div className="modal-body">{children}</div>
+      </div>
+    </div>
   )
 }

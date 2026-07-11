@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell, clipboard, BrowserWindow } from 'electron'
+import { ipcMain, dialog, shell, clipboard, BrowserWindow, app } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { existsSync } from 'fs'
 import { analyze } from './metadata'
@@ -156,6 +156,8 @@ export function registerIpc(): void {
     const settings = loadSettings()
     return getToolStatus(settings.ytdlpPath)
   })
+
+  handleTrusted('getAppVersion', async (): Promise<string> => app.getVersion())
 
   handleTrusted('updateYtdlp', async () => {
     const settings = loadSettings()

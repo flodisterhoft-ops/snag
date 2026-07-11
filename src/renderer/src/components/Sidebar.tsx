@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { useStore, View } from '../store'
 import { Icon } from './ui'
+import { AboutDialog } from './AboutDialog'
 
 const NAV: { view: View; icon: 'download' | 'queue' | 'settings'; label: string }[] = [
   { view: 'home', icon: 'download', label: 'Download' },
@@ -8,7 +10,8 @@ const NAV: { view: View; icon: 'download' | 'queue' | 'settings'; label: string 
 ]
 
 export function Sidebar(): JSX.Element {
-  const { view, setView, activeCount, toolStatus } = useStore()
+  const { view, setView, activeCount, toolStatus, appVersion } = useStore()
+  const [aboutOpen, setAboutOpen] = useState(false)
 
   return (
     <aside className="sidebar">
@@ -54,7 +57,15 @@ export function Sidebar(): JSX.Element {
             </span>
           </div>
         </div>
+
+        <button className="about-btn" onClick={() => setAboutOpen(true)} title="About Snag">
+          <Icon name="info" size={15} />
+          <span className="about-btn-label">About</span>
+          <span className="about-btn-ver">v{appVersion ?? '—'}</span>
+        </button>
       </div>
+
+      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </aside>
   )
 }
