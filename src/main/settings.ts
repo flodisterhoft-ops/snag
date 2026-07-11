@@ -26,7 +26,9 @@ function defaultSettings(): Settings {
     embedThumbnail: true,
     embedMetadata: true,
     browserHandoff: 'quick',
-    runInBackground: true
+    runInBackground: true,
+    autoCheckUpdates: true,
+    lastUpdateCheck: 0
   }
 }
 

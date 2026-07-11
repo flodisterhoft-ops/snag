@@ -8,7 +8,13 @@ import {
   useState,
   ReactNode
 } from 'react'
-import type { DownloadJob, Settings, ToolStatus, ProgressUpdate } from '@shared/types'
+import type {
+  DownloadJob,
+  Settings,
+  ToolStatus,
+  ProgressUpdate,
+  UpdateAvailability
+} from '@shared/types'
 import { applyProgressUpdate, removeFinishedJobs, removeJobById } from './jobState'
 
 export type View = 'home' | 'queue' | 'settings'
@@ -30,6 +36,9 @@ interface Store {
   // URL handed off from the browser via snag://, waiting to be analyzed.
   handoffUrl: string | null
   clearHandoffUrl: () => void
+  // Available updates (auto-check or manual), shown by the update banner.
+  updates: UpdateAvailability | null
+  setUpdates: (u: UpdateAvailability | null) => void
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -48,6 +57,7 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
   const [jobs, setJobs] = useState<DownloadJob[]>([])
   const [toolStatus, setToolStatus] = useState<ToolStatus | null>(null)
   const [handoffUrl, setHandoffUrl] = useState<string | null>(null)
+  const [updates, setUpdates] = useState<UpdateAvailability | null>(null)
   const jobsRef = useRef<DownloadJob[]>([])
   jobsRef.current = jobs
 
@@ -103,11 +113,16 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
     })
     const offExternal = window.api.onExternalUrl(receiveUrl)
 
+    const offUpdates = window.api.onUpdateAvailable((u: UpdateAvailability) => {
+      if (mounted) setUpdates(u)
+    })
+
     return () => {
       mounted = false
       offAdded()
       offProgress()
       offExternal()
+      offUpdates()
     }
   }, [initialize])
 
@@ -151,7 +166,9 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
     toolStatus,
     refreshTools,
     handoffUrl,
-    clearHandoffUrl: () => setHandoffUrl(null)
+    clearHandoffUrl: () => setHandoffUrl(null),
+    updates,
+    setUpdates
   }
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

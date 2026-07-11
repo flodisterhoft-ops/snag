@@ -163,6 +163,16 @@ export interface Settings {
   browserHandoff: BrowserHandoff
   // Keep Snag alive in the tray when all windows close, so downloads continue.
   runInBackground: boolean
+  // Look for Snag/yt-dlp updates about once a day.
+  autoCheckUpdates: boolean
+  // Timestamp of the last automatic update check (internal, not shown in UI).
+  lastUpdateCheck: number
+}
+
+// What the update check found; null per slot means up to date (or unknown).
+export interface UpdateAvailability {
+  app: { current: string; latest: string; url: string } | null
+  ytdlp: { current: string; latest: string } | null
 }
 
 export interface ExtensionInstallResult {
@@ -210,4 +220,7 @@ export interface Api {
   openInMainWindow: (url: string) => Promise<void>
   installBrowserExtension: () => Promise<ExtensionInstallResult>
   getBrowserExtensionPath: () => Promise<string | null>
+  // Updates
+  checkForUpdates: () => Promise<UpdateAvailability>
+  onUpdateAvailable: (cb: (u: UpdateAvailability) => void) => () => void
 }

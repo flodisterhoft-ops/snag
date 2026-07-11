@@ -6,6 +6,7 @@ import { ensureMainWindow, deliverExternalUrl } from './windows'
 import { createTray, setTrayActiveCount } from './tray'
 import { loadSettings } from './settings'
 import { downloadManager } from './downloader'
+import { checkForUpdates, shouldAutoCheck } from './updates'
 
 // Windows: needed for notifications to show the app identity/name correctly.
 if (process.platform === 'win32') {
@@ -76,6 +77,20 @@ if (!gotLock) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) ensureMainWindow()
     })
+
+    // Daily update check, delayed so it never competes with startup work.
+    setTimeout(() => {
+      if (!shouldAutoCheck()) return
+      checkForUpdates()
+        .then((u) => {
+          if (u.app || u.ytdlp) {
+            for (const win of BrowserWindow.getAllWindows()) {
+              if (!win.isDestroyed()) win.webContents.send('updateAvailable', u)
+            }
+          }
+        })
+        .catch((err) => console.error('Update check failed:', err))
+    }, 5000)
   })
 
   app.on('window-all-closed', () => {

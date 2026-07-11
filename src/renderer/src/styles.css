@@ -1644,3 +1644,80 @@ select {
   font-size: 11.5px;
   user-select: text;
 }
+
+/* ---------- Update banner ---------- */
+.update-banner {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 60;
+  width: 320px;
+  padding: 14px;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.update-banner-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+}
+.update-banner-head strong {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--text);
+}
+.update-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.update-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.update-row-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.update-row-sub {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.btn-sm {
+  padding: 6px 11px;
+  font-size: 12px;
+}
+.update-error {
+  font-size: 11.5px;
+  color: var(--danger);
+  white-space: pre-wrap;
+  max-height: 70px;
+  overflow-y: auto;
+  user-select: text;
+}
+.update-later {
+  align-self: center;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.update-later:hover {
+  color: var(--text-2);
+}

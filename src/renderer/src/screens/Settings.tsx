@@ -60,7 +60,7 @@ function Row({
 }
 
 export function SettingsScreen(): JSX.Element {
-  const { settings, updateSettings, toolStatus, refreshTools } = useStore()
+  const { settings, updateSettings, toolStatus, refreshTools, setUpdates } = useStore()
   const [form, setForm] = useState<Settings | null>(settings)
   const [updating, setUpdating] = useState(false)
   const [updateOutput, setUpdateOutput] = useState<string | null>(null)
@@ -70,6 +70,9 @@ export function SettingsScreen(): JSX.Element {
   const [extPath, setExtPath] = useState<string | null>(null)
   const [extError, setExtError] = useState<string | null>(null)
   const [extCopied, setExtCopied] = useState(false)
+
+  const [checking, setChecking] = useState(false)
+  const [checkResult, setCheckResult] = useState<string | null>(null)
 
   useEffect(() => {
     void window.api.getBrowserExtensionPath().then(setExtPath)
@@ -105,6 +108,19 @@ export function SettingsScreen(): JSX.Element {
     await navigator.clipboard.writeText(extPath)
     setExtCopied(true)
     window.setTimeout(() => setExtCopied(false), 1600)
+  }
+
+  const checkUpdatesNow = async (): Promise<void> => {
+    setChecking(true)
+    setCheckResult(null)
+    const res = await window.api.checkForUpdates()
+    setChecking(false)
+    if (res.app || res.ytdlp) {
+      setUpdates(res)
+      setCheckResult('Update found — see the panel in the corner.')
+    } else {
+      setCheckResult('Everything is up to date.')
+    }
   }
 
   const runUpdate = async (): Promise<void> => {
@@ -418,6 +434,24 @@ export function SettingsScreen(): JSX.Element {
             onChange={(e) => set({ ytdlpPath: e.target.value.trim() || null })}
             onBlur={() => refreshTools()}
           />
+        </Row>
+      </Section>
+
+      <Section title="Updates">
+        <Row
+          title="Check for updates automatically"
+          desc="Look for new Snag and yt-dlp releases about once a day"
+        >
+          <Toggle
+            checked={form.autoCheckUpdates}
+            onChange={(v) => set({ autoCheckUpdates: v })}
+          />
+        </Row>
+        <Row title="Check now" desc={checkResult ?? 'Compare against the latest GitHub releases'}>
+          <button className="btn-outline" onClick={checkUpdatesNow} disabled={checking}>
+            {checking ? <Spinner size={14} /> : <Icon name="retry" size={14} />}
+            {checking ? 'Checking…' : 'Check for updates'}
+          </button>
         </Row>
       </Section>
     </div>

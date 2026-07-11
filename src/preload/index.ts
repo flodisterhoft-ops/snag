@@ -4,7 +4,8 @@ import type {
   DownloadRequest,
   Settings,
   ProgressUpdate,
-  DownloadJob
+  DownloadJob,
+  UpdateAvailability
 } from '@shared/types'
 
 const api: Api = {
@@ -41,7 +42,13 @@ const api: Api = {
   },
   openInMainWindow: (url: string) => ipcRenderer.invoke('openInMainWindow', url),
   installBrowserExtension: () => ipcRenderer.invoke('installBrowserExtension'),
-  getBrowserExtensionPath: () => ipcRenderer.invoke('getBrowserExtensionPath')
+  getBrowserExtensionPath: () => ipcRenderer.invoke('getBrowserExtensionPath'),
+  checkForUpdates: () => ipcRenderer.invoke('checkForUpdates'),
+  onUpdateAvailable: (cb: (u: UpdateAvailability) => void) => {
+    const listener = (_e: IpcRendererEvent, u: UpdateAvailability): void => cb(u)
+    ipcRenderer.on('updateAvailable', listener)
+    return () => ipcRenderer.removeListener('updateAvailable', listener)
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

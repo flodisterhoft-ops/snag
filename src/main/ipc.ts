@@ -7,6 +7,7 @@ import { getToolStatus, updateYtdlp, resetToolCache } from './ytdlp'
 import { consumePendingExternalUrl, deliverExternalUrl, ensureMainWindow } from './windows'
 import { installBrowserExtension, getInstalledExtensionPath } from './extension'
 import { isHttpUrl } from './protocol'
+import { checkForUpdates } from './updates'
 import type {
   AnalyzeResult,
   DownloadRequest,
@@ -131,4 +132,6 @@ export function registerIpc(): void {
   ipcMain.handle('getBrowserExtensionPath', async (): Promise<string | null> => {
     return getInstalledExtensionPath()
   })
+
+  ipcMain.handle('checkForUpdates', async () => checkForUpdates())
 }
