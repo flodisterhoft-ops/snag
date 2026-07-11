@@ -43,6 +43,20 @@ describe('buildDownloadArgs', () => {
     expect(args).not.toContain('--limit-rate')
   })
 
+  it('uses Electron as yt-dlp\'s JavaScript runtime', () => {
+    const args = buildDownloadArgs(request, settings, {
+      ffmpegLocation: null,
+      nodeRuntimePath: 'C:\\Program Files\\Snag\\Snag.exe'
+    })
+    const clearIndex = args.indexOf('--no-js-runtimes')
+    expect(clearIndex).toBeGreaterThanOrEqual(0)
+    expect(args.slice(clearIndex, clearIndex + 3)).toEqual([
+      '--no-js-runtimes',
+      '--js-runtimes',
+      'node:C:\\Program Files\\Snag\\Snag.exe'
+    ])
+  })
+
   it('includes a configured bandwidth cap', () => {
     const args = buildDownloadArgs(
       request,
@@ -53,5 +67,33 @@ describe('buildDownloadArgs', () => {
       '--limit-rate',
       '25M'
     ])
+  })
+
+  it('remuxes progressive downloads so the chosen container is honored', () => {
+    const args = buildDownloadArgs(
+      { ...request, audioFormatId: undefined, mergeContainer: 'mkv' },
+      settings,
+      { ffmpegLocation: null }
+    )
+    expect(args.slice(args.indexOf('--merge-output-format'), args.indexOf('--merge-output-format') + 2)).toEqual([
+      '--merge-output-format',
+      'mkv'
+    ])
+    expect(args.slice(args.indexOf('--remux-video'), args.indexOf('--remux-video') + 2)).toEqual([
+      '--remux-video',
+      'mkv'
+    ])
+  })
+
+  it('falls back to WebM-compatible codecs instead of attempting an invalid mux', () => {
+    const args = buildDownloadArgs(
+      { ...request, mergeContainer: 'webm' },
+      settings,
+      { ffmpegLocation: null }
+    )
+    const selector = args[args.indexOf('-f') + 1]
+    expect(selector).toContain("137[vcodec~='^(vp8|vp9|vp0?9|av01)']")
+    expect(selector).toContain("140[acodec~='^(opus|vorbis)']")
+    expect(selector).toContain("bv*[vcodec~='^(vp8|vp9|vp0?9|av01)']+ba[acodec~='^(opus|vorbis)']")
   })
 })

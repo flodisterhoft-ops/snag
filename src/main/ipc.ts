@@ -1,10 +1,20 @@
-import { ipcMain, dialog, shell, clipboard, BrowserWindow, app } from 'electron'
+import { ipcMain, dialog, shell, clipboard, BrowserWindow } from 'electron'
+import type { IpcMainInvokeEvent } from 'electron'
 import { existsSync } from 'fs'
 import { analyze } from './metadata'
 import { downloadManager } from './downloader'
 import { loadSettings, saveSettings } from './settings'
 import { getToolStatus, updateYtdlp, resetToolCache } from './ytdlp'
-import { consumePendingExternalUrl, deliverExternalUrl, ensureMainWindow } from './windows'
+import {
+  consumePendingExternalUrl,
+  deliverExternalUrl,
+  ensureMainWindow,
+  clearCachedYtdlpUpdate,
+  clearCachedUpdates,
+  isKnownRenderer,
+  isTrustedRendererUrl,
+  publishUpdateAvailability
+} from './windows'
 import { installBrowserExtension, getInstalledExtensionPath } from './extension'
 import { isHttpUrl } from './protocol'
 import { checkForUpdates } from './updates'
@@ -22,11 +32,35 @@ function broadcast(channel: string, payload: unknown): void {
   }
 }
 
+function assertTrustedCaller(event: IpcMainInvokeEvent, channel: string): void {
+  const frame = event.senderFrame
+  const trusted =
+    frame !== null &&
+    frame.parent === null &&
+    frame.frameTreeNodeId === event.sender.mainFrame.frameTreeNodeId &&
+    isKnownRenderer(event.sender.id) &&
+    isTrustedRendererUrl(frame.url)
+  if (!trusted) {
+    console.warn(`[snag] Blocked unauthorized IPC call: ${channel}`)
+    throw new Error('Unauthorized IPC caller.')
+  }
+}
+
+function handleTrusted<Args extends unknown[], Result>(
+  channel: string,
+  listener: (event: IpcMainInvokeEvent, ...args: Args) => Result | Promise<Result>
+): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    assertTrustedCaller(event, channel)
+    return listener(event, ...(args as Args))
+  })
+}
+
 export function registerIpc(): void {
   downloadManager.on('progress', (u: ProgressUpdate) => broadcast('progress', u))
   downloadManager.on('added', (j: DownloadJob) => broadcast('jobAdded', j))
 
-  ipcMain.handle('analyze', async (_e, url: string): Promise<AnalyzeResult> => {
+  handleTrusted('analyze', async (_e, url: string): Promise<AnalyzeResult> => {
     try {
       const settings = loadSettings()
       const info = await analyze(url, settings.ytdlpPath)
@@ -36,7 +70,7 @@ export function registerIpc(): void {
     }
   })
 
-  ipcMain.handle('enqueue', async (_e, request: DownloadRequest): Promise<DownloadJob> => {
+  handleTrusted('enqueue', async (_e, request: DownloadRequest): Promise<DownloadJob> => {
     // Persist last-used kind so the picker can restore it next time.
     const settings = loadSettings()
     if (settings.rememberLastChoices && settings.lastKind !== request.kind) {
@@ -45,37 +79,44 @@ export function registerIpc(): void {
     return downloadManager.enqueue(request)
   })
 
-  ipcMain.handle('cancel', async (_e, jobId: string): Promise<void> => {
+  handleTrusted('cancel', async (_e, jobId: string): Promise<void> => {
     downloadManager.cancel(jobId)
   })
 
-  ipcMain.handle('retry', async (_e, jobId: string): Promise<DownloadJob | null> => {
+  handleTrusted('retry', async (_e, jobId: string): Promise<DownloadJob | null> => {
     return downloadManager.retry(jobId)
   })
 
-  ipcMain.handle('clearCompleted', async (): Promise<void> => {
+  handleTrusted('clearCompleted', async (): Promise<void> => {
     downloadManager.clearCompleted()
   })
 
-  ipcMain.handle('removeJob', async (_e, jobId: string): Promise<void> => {
+  handleTrusted('removeJob', async (_e, jobId: string): Promise<void> => {
     downloadManager.removeJob(jobId)
   })
 
-  ipcMain.handle('getJobs', async (): Promise<DownloadJob[]> => {
+  handleTrusted('getJobs', async (): Promise<DownloadJob[]> => {
     return downloadManager.getJobs()
   })
 
-  ipcMain.handle('getSettings', async (): Promise<Settings> => {
+  handleTrusted('getSettings', async (): Promise<Settings> => {
     return loadSettings()
   })
 
-  ipcMain.handle('setSettings', async (_e, patch: Partial<Settings>): Promise<Settings> => {
+  handleTrusted('setSettings', async (_e, patch: Partial<Settings>): Promise<Settings> => {
+    const previous = loadSettings()
     const next = saveSettings(patch)
     if ('ytdlpPath' in patch) resetToolCache()
+    if (
+      'parallelDownloads' in patch &&
+      next.parallelDownloads > previous.parallelDownloads
+    ) {
+      downloadManager.reschedule()
+    }
     return next
   })
 
-  ipcMain.handle('pickFolder', async (_e, current?: string): Promise<string | null> => {
+  handleTrusted('pickFolder', async (_e, current?: string): Promise<string | null> => {
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
     const opts: Electron.OpenDialogOptions = {
       title: 'Choose download folder',
@@ -89,49 +130,63 @@ export function registerIpc(): void {
     return result.filePaths[0]
   })
 
-  ipcMain.handle('openPath', async (_e, target: string): Promise<void> => {
-    if (target) await shell.openPath(target)
+  handleTrusted('openPath', async (_e, target: string): Promise<string> => {
+    if (!target) return 'No path was provided.'
+    return shell.openPath(target)
   })
 
-  ipcMain.handle('showInFolder', async (_e, target: string): Promise<void> => {
-    if (target && existsSync(target)) shell.showItemInFolder(target)
-    else if (target) await shell.openPath(target)
+  handleTrusted('showInFolder', async (_e, target: string): Promise<string> => {
+    if (!target) return 'No path was provided.'
+    if (existsSync(target)) {
+      shell.showItemInFolder(target)
+      return ''
+    }
+    return shell.openPath(target)
   })
 
-  ipcMain.handle('readClipboard', async (): Promise<string> => {
+  handleTrusted('readClipboard', async (): Promise<string> => {
     return clipboard.readText() || ''
   })
 
-  ipcMain.handle('getToolStatus', async () => {
+  handleTrusted('getToolStatus', async () => {
     const settings = loadSettings()
     return getToolStatus(settings.ytdlpPath)
   })
 
-  ipcMain.handle('updateYtdlp', async () => {
+  handleTrusted('updateYtdlp', async () => {
     const settings = loadSettings()
     const res = await updateYtdlp(settings.ytdlpPath)
     resetToolCache()
+    if (res.ok) clearCachedYtdlpUpdate()
     return res
   })
 
-  ipcMain.handle('getAppVersion', async (): Promise<string> => app.getVersion())
-
   // --- Browser handoff (snag:// deep links) ---
 
-  ipcMain.handle('consumePendingExternalUrl', async (e): Promise<string | null> => {
+  handleTrusted('consumePendingExternalUrl', async (e): Promise<string | null> => {
     return consumePendingExternalUrl(e.sender.id)
   })
 
-  ipcMain.handle('openInMainWindow', async (_e, url: string): Promise<void> => {
+  handleTrusted('openInMainWindow', async (_e, url: string): Promise<void> => {
     if (typeof url === 'string' && isHttpUrl(url)) deliverExternalUrl(url, 'main')
     else ensureMainWindow()
   })
 
-  ipcMain.handle('installBrowserExtension', async () => installBrowserExtension())
+  handleTrusted('installBrowserExtension', async () => installBrowserExtension())
 
-  ipcMain.handle('getBrowserExtensionPath', async (): Promise<string | null> => {
+  handleTrusted('getBrowserExtensionPath', async (): Promise<string | null> => {
     return getInstalledExtensionPath()
   })
 
-  ipcMain.handle('checkForUpdates', async () => checkForUpdates())
+  handleTrusted('checkForUpdates', async () => {
+    const update = await checkForUpdates()
+    if (update.status === 'success' || update.app || update.ytdlp) {
+      publishUpdateAvailability(update)
+    }
+    return update
+  })
+
+  handleTrusted('dismissUpdates', async (): Promise<void> => {
+    clearCachedUpdates()
+  })
 }

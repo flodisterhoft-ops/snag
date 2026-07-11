@@ -44,6 +44,7 @@ const api: Api = {
   installBrowserExtension: () => ipcRenderer.invoke('installBrowserExtension'),
   getBrowserExtensionPath: () => ipcRenderer.invoke('getBrowserExtensionPath'),
   checkForUpdates: () => ipcRenderer.invoke('checkForUpdates'),
+  dismissUpdates: () => ipcRenderer.invoke('dismissUpdates'),
   onUpdateAvailable: (cb: (u: UpdateAvailability) => void) => {
     const listener = (_e: IpcRendererEvent, u: UpdateAvailability): void => cb(u)
     ipcRenderer.on('updateAvailable', listener)

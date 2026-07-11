@@ -75,7 +75,10 @@ export function SettingsScreen(): JSX.Element {
   const [checkResult, setCheckResult] = useState<string | null>(null)
 
   useEffect(() => {
-    void window.api.getBrowserExtensionPath().then(setExtPath)
+    void window.api
+      .getBrowserExtensionPath()
+      .then(setExtPath)
+      .catch((err) => setExtError((err as Error).message || 'Could not inspect the extension folder.'))
   }, [])
 
   if (!form || !settings) return <div className="screen" />
@@ -98,38 +101,62 @@ export function SettingsScreen(): JSX.Element {
 
   const installExtension = async (): Promise<void> => {
     setExtError(null)
-    const res = await window.api.installBrowserExtension()
-    if (res.ok && res.path) setExtPath(res.path)
-    else setExtError(res.error ?? 'Could not copy the extension files.')
+    try {
+      const res = await window.api.installBrowserExtension()
+      if (res.ok && res.path) setExtPath(res.path)
+      else setExtError(res.error ?? 'Could not copy the extension files.')
+    } catch (err) {
+      setExtError((err as Error).message || 'Could not copy the extension files.')
+    }
   }
 
   const copyExtPath = async (): Promise<void> => {
     if (!extPath) return
-    await navigator.clipboard.writeText(extPath)
-    setExtCopied(true)
-    window.setTimeout(() => setExtCopied(false), 1600)
+    try {
+      await navigator.clipboard.writeText(extPath)
+      setExtCopied(true)
+      window.setTimeout(() => setExtCopied(false), 1600)
+    } catch (err) {
+      setExtError((err as Error).message || 'Could not copy the extension path.')
+    }
   }
 
   const checkUpdatesNow = async (): Promise<void> => {
     setChecking(true)
     setCheckResult(null)
-    const res = await window.api.checkForUpdates()
-    setChecking(false)
-    if (res.app || res.ytdlp) {
-      setUpdates(res)
-      setCheckResult('Update found — see the panel in the corner.')
-    } else {
-      setCheckResult('Everything is up to date.')
+    try {
+      const res = await window.api.checkForUpdates()
+      if (res.app || res.ytdlp) {
+        setUpdates(res)
+        setCheckResult(
+          res.status === 'success'
+            ? 'Update found — see the panel in the corner.'
+            : `Update found, but another check could not finish. ${res.error ?? ''}`.trim()
+        )
+      } else if (res.status === 'success') {
+        setCheckResult('Everything is up to date.')
+      } else {
+        setCheckResult(res.error ?? 'Could not complete the update check. Please try again.')
+      }
+    } catch (err) {
+      setCheckResult((err as Error).message || 'Could not check for updates. Please try again.')
+    } finally {
+      setChecking(false)
     }
   }
 
   const runUpdate = async (): Promise<void> => {
     setUpdating(true)
     setUpdateOutput(null)
-    const res = await window.api.updateYtdlp()
-    setUpdating(false)
-    setUpdateOutput(res.output || (res.ok ? 'Up to date.' : 'Update failed.'))
-    refreshTools()
+    try {
+      const res = await window.api.updateYtdlp()
+      setUpdateOutput(res.output || (res.ok ? 'Up to date.' : 'Update failed.'))
+      await refreshTools()
+    } catch (err) {
+      setUpdateOutput((err as Error).message || 'Update failed.')
+    } finally {
+      setUpdating(false)
+    }
   }
 
   return (
@@ -197,6 +224,7 @@ export function SettingsScreen(): JSX.Element {
             <Toggle
               checked={form.speedLimit.enabled}
               onChange={(v) => set({ speedLimit: { ...form.speedLimit, enabled: v } })}
+              label="Speed limit"
             />
             {form.speedLimit.enabled && (
               <>
@@ -228,6 +256,7 @@ export function SettingsScreen(): JSX.Element {
           <Toggle
             checked={form.notificationsEnabled}
             onChange={(v) => set({ notificationsEnabled: v })}
+            label="Finished notifications"
           />
         </Row>
       </Section>
@@ -300,21 +329,31 @@ export function SettingsScreen(): JSX.Element {
           <Toggle
             checked={form.rememberLastChoices}
             onChange={(v) => set({ rememberLastChoices: v })}
+            label="Remember last choices"
           />
         </Row>
       </Section>
 
       <Section title="Extras">
         <Row title="Embed cover art in audio" desc="Add the thumbnail as album art (MP3/M4A)">
-          <Toggle checked={form.embedThumbnail} onChange={(v) => set({ embedThumbnail: v })} />
+          <Toggle
+            checked={form.embedThumbnail}
+            onChange={(v) => set({ embedThumbnail: v })}
+            label="Embed cover art in audio"
+          />
         </Row>
         <Row title="Embed metadata" desc="Write title, artist, and date into the file">
-          <Toggle checked={form.embedMetadata} onChange={(v) => set({ embedMetadata: v })} />
+          <Toggle
+            checked={form.embedMetadata}
+            onChange={(v) => set({ embedMetadata: v })}
+            label="Embed metadata"
+          />
         </Row>
         <Row title="Subtitles by default" desc="Preselect subtitle download when available">
           <Toggle
             checked={form.subtitles.enabled}
             onChange={(v) => set({ subtitles: { ...form.subtitles, enabled: v } })}
+            label="Subtitles by default"
           />
         </Row>
         {form.subtitles.enabled && (
@@ -357,17 +396,21 @@ export function SettingsScreen(): JSX.Element {
           title="Keep running in background"
           desc="Stay in the tray when all windows close so downloads keep going"
         >
-          <Toggle checked={form.runInBackground} onChange={(v) => set({ runInBackground: v })} />
+          <Toggle
+            checked={form.runInBackground}
+            onChange={(v) => set({ runInBackground: v })}
+            label="Keep running in background"
+          />
         </Row>
         <Row
           title="Chrome extension"
-          desc="Adds a download button on videos plus right-click menus in Chrome"
+          desc="Adds a translucent button over supported web videos; Chrome requires one manual setup"
           stacked
         >
           <div className="ext-install">
             <button className="btn-outline" onClick={installExtension}>
               <Icon name="download" size={15} />
-              {extPath ? 'Reinstall extension files' : 'Install extension files'}
+              {extPath ? 'Refresh extension folder' : 'Prepare extension folder'}
             </button>
             {extError && <span className="ext-error">{extError}</span>}
             {extPath && (
@@ -386,9 +429,19 @@ export function SettingsScreen(): JSX.Element {
                     Turn on <strong>Developer mode</strong> (top-right corner)
                   </li>
                   <li>
-                    Click <strong>Load unpacked</strong> and pick the folder above
+                    First installation: click <strong>Load unpacked</strong> and pick the folder
+                    above. After a Snag update, click <strong>Reload</strong> on its extension card
                   </li>
+                  <li>
+                    Click the Snag button once, choose <strong>Open Snag</strong>, and allow future
+                    links when Chrome offers the option
+                  </li>
+                  <li>Reload any video tabs that were already open</li>
                 </ol>
+                <span className="set-row-desc">
+                  The overlay appears on large HTML5 videos. Browser-internal pages, DRM players,
+                  and sites unsupported by yt-dlp may not work.
+                </span>
               </div>
             )}
           </div>
@@ -445,6 +498,7 @@ export function SettingsScreen(): JSX.Element {
           <Toggle
             checked={form.autoCheckUpdates}
             onChange={(v) => set({ autoCheckUpdates: v })}
+            label="Check for updates automatically"
           />
         </Row>
         <Row title="Check now" desc={checkResult ?? 'Compare against the latest GitHub releases'}>

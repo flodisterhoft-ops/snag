@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "target": "win32-x64",
+  "generatedOn": "2026-07-11",
+  "tools": [
+    {
+      "id": "yt-dlp",
+      "version": "2026.07.04",
+      "project": "https://github.com/yt-dlp/yt-dlp",
+      "source": "https://github.com/yt-dlp/yt-dlp/tree/2026.07.04",
+      "download": {
+        "kind": "file",
+        "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.07.04/yt-dlp.exe",
+        "sha256": "52fe3c26dcf71fbdc85b528589020bb0b8e383155cfa81b64dd447bbe35e24b8"
+      },
+      "files": [
+        {
+          "output": "yt-dlp.exe",
+          "sha256": "52fe3c26dcf71fbdc85b528589020bb0b8e383155cfa81b64dd447bbe35e24b8"
+        }
+      ]
+    },
+    {
+      "id": "ffmpeg",
+      "version": "8.0.1-essentials_build-www.gyan.dev",
+      "project": "https://ffmpeg.org/",
+      "buildProvider": "https://www.gyan.dev/ffmpeg/builds/",
+      "buildRelease": "https://github.com/GyanD/codexffmpeg/releases/tag/8.0.1",
+      "sourceCommit": "894da5ca7d742e4429ffb2af534fcda0103ef593",
+      "source": "https://github.com/FFmpeg/FFmpeg/tree/894da5ca7d742e4429ffb2af534fcda0103ef593",
+      "license": "GPL-3.0-or-later",
+      "download": {
+        "kind": "zip",
+        "url": "https://github.com/GyanD/codexffmpeg/releases/download/8.0.1/ffmpeg-8.0.1-essentials_build.zip",
+        "sha256": "e2aaeaa0fdbc397d4794828086424d4aaa2102cef1fb6874f6ffd29c0b88b673"
+      },
+      "files": [
+        {
+          "path": "ffmpeg-8.0.1-essentials_build/bin/ffmpeg.exe",
+          "output": "ffmpeg.exe",
+          "sha256": "5af82a0d4fe2b9eae211b967332ea97edfc51c6b328ca35b827e73eac560dc0d"
+        },
+        {
+          "path": "ffmpeg-8.0.1-essentials_build/LICENSE",
+          "output": "ffmpeg-COPYING.GPLv3.txt",
+          "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+        },
+        {
+          "path": "ffmpeg-8.0.1-essentials_build/README.txt",
+          "output": "ffmpeg-BUILD-README.txt",
+          "sha256": "a0e976df3cf1d781264c41db8ee3421978c1278be92ed00edbc96337529670be"
+        }
+      ]
+    }
+  ],
+  "supportFiles": [
+    {
+      "url": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.07.04/LICENSE",
+      "output": "yt-dlp-LICENSE.txt",
+      "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.07.04/THIRD_PARTY_LICENSES.txt",
+      "output": "yt-dlp-THIRD_PARTY_LICENSES.txt",
+      "sha256": "b085c65586a953cdb4b13c6390d63ec984d66912e4b6a19e66ba3582f2ed104b"
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import type { DownloadJob } from '@shared/types'
 import { Icon } from './ui'
 import { formatDownloadSpeed, shortPath } from '../lib/format'
 import { useStore } from '../store'
+import { useState } from 'react'
 
 const STATUS_LABEL: Record<DownloadJob['status'], string> = {
   queued: 'Queued',
@@ -17,6 +18,20 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
   const { status } = job
   const isActive = status === 'downloading' || status === 'processing'
   const pct = Math.round(job.progress)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const openDownloadedPath = async (showInFolder: boolean): Promise<void> => {
+    if (!job.filepath) return
+    setActionError(null)
+    try {
+      const error = showInFolder
+        ? await window.api.showInFolder(job.filepath)
+        : await window.api.openPath(job.filepath)
+      if (error) setActionError(error)
+    } catch (err) {
+      setActionError((err as Error).message || 'Windows could not open this file.')
+    }
+  }
 
   return (
     <div className={`job-card ${status}`}>
@@ -75,6 +90,7 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
           )}
           {status === 'error' && <span className="job-error">{job.errorMessage}</span>}
           {status === 'canceled' && <span className="dim">Download canceled</span>}
+          {actionError && <span className="job-error">{actionError}</span>}
         </div>
       </div>
 
@@ -89,14 +105,14 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
             <button
               className="icon-btn"
               title="Open file"
-              onClick={() => job.filepath && window.api.openPath(job.filepath)}
+              onClick={() => void openDownloadedPath(false)}
             >
               <Icon name="open" size={16} />
             </button>
             <button
               className="icon-btn"
               title="Show in folder"
-              onClick={() => job.filepath && window.api.showInFolder(job.filepath)}
+              onClick={() => void openDownloadedPath(true)}
             >
               <Icon name="folder" size={16} />
             </button>

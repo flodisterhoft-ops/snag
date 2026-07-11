@@ -14,6 +14,13 @@ export function isHttpUrl(value: string): boolean {
   }
 }
 
+// URL schemes allowed to leave the trusted renderer and open in the user's
+// browser. In particular, never pass file:, javascript:, data:, or snag: to
+// shell.openExternal.
+export function isSafeExternalUrl(value: string): boolean {
+  return isHttpUrl(value)
+}
+
 // Extract the http(s) target from a deep link like
 //   snag://download?url=https%3A%2F%2Fyoutube.com%2Fwatch%3Fv%3Dabc
 // Returns null for anything malformed, oversized, or non-http(s).
@@ -43,7 +50,14 @@ export function parseDeepLink(raw: unknown): string | null {
 // Find the first valid deep link among process arguments (cold or warm launch).
 export function deepLinkFromArgv(argv: readonly string[]): string | null {
   for (const arg of argv) {
-    const url = parseDeepLink(arg)
+    const trimmed = arg.trim()
+    const candidate =
+      trimmed.length >= 2 &&
+      ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+        (trimmed.startsWith("'") && trimmed.endsWith("'")))
+        ? trimmed.slice(1, -1)
+        : trimmed
+    const url = parseDeepLink(candidate)
     if (url) return url
   }
   return null

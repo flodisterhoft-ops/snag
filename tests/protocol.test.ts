@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { parseDeepLink, deepLinkFromArgv, isHttpUrl } from '../src/main/protocol'
+import {
+  parseDeepLink,
+  deepLinkFromArgv,
+  isHttpUrl,
+  isSafeExternalUrl
+} from '../src/main/protocol'
 
 const target = 'https://www.youtube.com/watch?v=aqz-KE-bpKQ'
 const link = `snag://download?url=${encodeURIComponent(target)}`
@@ -54,6 +59,20 @@ describe('deepLinkFromArgv', () => {
 
   it('returns null when no argument is a valid deep link', () => {
     expect(deepLinkFromArgv(['C:\\app\\Snag.exe', 'https://example.com'])).toBeNull()
+  })
+
+  it('accepts a deep link wrapped in command-line quotes', () => {
+    expect(deepLinkFromArgv([`"${link}"`])).toBe(target)
+  })
+})
+
+describe('isSafeExternalUrl', () => {
+  it('allows only web URLs to leave the app renderer', () => {
+    expect(isSafeExternalUrl('https://github.com/flodisterhoft-ops/snag')).toBe(true)
+    expect(isSafeExternalUrl('http://example.com')).toBe(true)
+    for (const unsafe of ['file:///C:/secret.txt', 'javascript:alert(1)', 'data:text/html,x', 'snag://download']) {
+      expect(isSafeExternalUrl(unsafe)).toBe(false)
+    }
   })
 })
 

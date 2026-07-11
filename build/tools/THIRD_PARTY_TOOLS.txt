@@ -1,13 +1,37 @@
-Snag packages yt-dlp and FFmpeg as separate command-line programs.
+THIRD-PARTY COMMAND-LINE TOOLS
+================================
 
-yt-dlp
-  Project: https://github.com/yt-dlp/yt-dlp
-  License: The Unlicense
-  Source and releases: https://github.com/yt-dlp/yt-dlp/releases
+Snag invokes these programs as separate command-line processes. They are not
+linked into Snag. Exact versions, immutable download URLs, archive hashes, and
+installed-file hashes are recorded in TOOLS_MANIFEST.json.
 
-FFmpeg
-  Project: https://ffmpeg.org/
-  License: LGPL 2.1 or later; particular distributed builds may enable GPL components
-  Source: https://ffmpeg.org/download.html#get-sources
+yt-dlp 2026.07.04
+-----------------
+Project and source: https://github.com/yt-dlp/yt-dlp/tree/2026.07.04
+Primary license: The Unlicense
+Bundled notices:
+  yt-dlp-LICENSE.txt
+  yt-dlp-THIRD_PARTY_LICENSES.txt
 
-Run `yt-dlp --version` and `ffmpeg -version` to inspect the exact bundled builds.
+The Windows executable is a PyInstaller distribution and includes components
+under additional permissive licenses. Read the bundled third-party license file
+for the complete notices supplied by this exact yt-dlp release.
+
+FFmpeg 8.0.1 essentials build from gyan.dev
+--------------------------------------------
+Project: https://ffmpeg.org/
+Build provider: https://www.gyan.dev/ffmpeg/builds/
+Binary release: https://github.com/GyanD/codexffmpeg/releases/tag/8.0.1
+Exact FFmpeg source commit:
+  https://github.com/FFmpeg/FFmpeg/tree/894da5ca7d742e4429ffb2af534fcda0103ef593
+License of this build: GNU General Public License version 3
+Bundled notices:
+  ffmpeg-COPYING.GPLv3.txt
+  ffmpeg-BUILD-README.txt
+  SOURCE_COMPLIANCE.md
+
+This is not an LGPL-only FFmpeg build. Its configuration enables GPL and
+version-3 components and statically links external libraries. Snag remains a
+separate MIT-licensed program, but anyone distributing the packaged FFmpeg
+executable must independently satisfy the GPL's license and Corresponding
+Source requirements. Read SOURCE_COMPLIANCE.md before publishing a release.

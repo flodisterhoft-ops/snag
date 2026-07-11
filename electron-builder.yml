@@ -4,17 +4,33 @@ directories:
   buildResources: build
   output: dist
 files:
-  - '!**/.vscode/*'
-  - '!src/*'
-  - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
-  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml,package-lock.json}'
-  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  # Explicit allowlist: never package local agent settings, source, tests,
+  # docs, scripts, repository metadata, or other workspace files in app.asar.
+  - out/**/*
+  - package.json
+  - LICENSE
 extraResources:
   - from: build/tools
     to: tools
+    filter:
+      - yt-dlp.exe
+      - yt-dlp-LICENSE.txt
+      - yt-dlp-THIRD_PARTY_LICENSES.txt
+      - ffmpeg.exe
+      - ffmpeg-COPYING.GPLv3.txt
+      - ffmpeg-BUILD-README.txt
+      - TOOLS_MANIFEST.json
+      - THIRD_PARTY_TOOLS.txt
+      - SOURCE_COMPLIANCE.md
   - from: extension
     to: extension
+    filter:
+      - manifest.json
+      - background.js
+      - content.js
+      - content.css
+      - README.md
+      - icons/**/*
 protocols:
   - name: Snag deep link
     schemes:

@@ -4,10 +4,17 @@ import type {
   Settings,
   DownloadKind,
   VideoContainer,
-  AudioOutputFormat
+  AudioOutputFormat,
+  AudioFormat,
+  VideoFormat
 } from '@shared/types'
 import { formatBytes } from '../lib/format'
 import { Icon, Segmented } from './ui'
+import {
+  filterVideoFormatsForContainer,
+  findCompatibleAudioFormat,
+  formatContainerSource
+} from '@shared/container'
 
 export interface FormatSelection {
   kind: DownloadKind
@@ -29,7 +36,23 @@ const AUDIO_FORMATS: { value: AudioOutputFormat; label: string; hint: string }[]
   { value: 'best', label: 'Original', hint: 'no re-encode' }
 ]
 
+const EMPTY_AUDIO_FORMATS: AudioFormat[] = []
+
 const groupKey = (lang: string | null): string => lang ?? '__default__'
+
+function resolutionTier(format: VideoFormat): string | null {
+  const resolution =
+    format.width && format.height
+      ? Math.min(format.width, format.height)
+      : format.height ?? format.width ?? 0
+  if (resolution >= 4320) return '8K'
+  if (resolution >= 2160) return '4K'
+  return null
+}
+
+function exactResolution(format: VideoFormat): string | undefined {
+  return format.width && format.height ? `${format.width}×${format.height}` : undefined
+}
 
 export function FormatPicker({
   info,
@@ -70,7 +93,29 @@ export function FormatPicker({
 
   const selectedGroup =
     info.audioGroups.find((g) => groupKey(g.language) === langKey) ?? info.audioGroups[0] ?? null
-  const selectedVideo = info.videoFormats.find((f) => f.formatId === videoId) ?? null
+  const selectedAudioFormats = selectedGroup?.formats ?? EMPTY_AUDIO_FORMATS
+  const compatibleAudioFormat = useMemo(
+    () => findCompatibleAudioFormat(container, selectedAudioFormats),
+    [container, selectedAudioFormats]
+  )
+  const selectableVideos = useMemo(
+    () => filterVideoFormatsForContainer(container, info.videoFormats, selectedAudioFormats),
+    [container, info.videoFormats, selectedAudioFormats]
+  )
+  const selectedVideo = selectableVideos.find((f) => f.formatId === videoId) ?? null
+  const bestVideo = selectableVideos[0] ?? null
+
+  // Container changes can make the current exact format impossible to remux.
+  // Select the best compatible row instead of silently downloading another ID.
+  useEffect(() => {
+    if (!selectableVideos.some((f) => f.formatId === videoId)) {
+      setVideoId(selectableVideos[0]?.formatId ?? '')
+    }
+  }, [selectableVideos, videoId])
+
+  const mergeAudioId = !selectedVideo?.isProgressive
+    ? compatibleAudioFormat?.formatId
+    : undefined
 
   const selection = useMemo<FormatSelection>(() => {
     if (kind === 'audio') {
@@ -86,16 +131,6 @@ export function FormatPicker({
         valid: hasAudio
       }
     }
-    let mergeAudioId: string | undefined
-    if (!selectedVideo?.isProgressive && selectedGroup) {
-      // For an mp4 container, prefer AAC/M4A audio so the merge stays mp4-compatible
-      // (Opus/WebM audio would force yt-dlp to fall back to .mkv).
-      const compatible =
-        container === 'mp4'
-          ? selectedGroup.formats.find((f) => f.ext === 'm4a' || f.acodec === 'AAC')
-          : undefined
-      mergeAudioId = (compatible ?? selectedGroup.formats[0])?.formatId
-    }
     const label =
       (selectedVideo?.qualityLabel ?? 'Best') +
       ` · ${container.toUpperCase()}` +
@@ -107,10 +142,10 @@ export function FormatPicker({
       mergeContainer: container,
       audioLanguage: selectedGroup?.language ?? null,
       selectionLabel: label,
-      valid: !!selectedVideo
+      valid: !!selectedVideo && (selectedVideo.isProgressive || !!mergeAudioId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, videoId, container, langKey, audioFmt, info.id])
+  }, [kind, videoId, container, langKey, audioFmt, info.id, mergeAudioId])
 
   useEffect(() => {
     onChange(selection)
@@ -161,7 +196,7 @@ export function FormatPicker({
       {kind === 'video' ? (
         <div className="video-panel">
           <div className="panel-controls">
-            <div className="control-label">Container</div>
+            <div className="control-label">Output container</div>
             <Segmented
               size="sm"
               options={[
@@ -172,9 +207,16 @@ export function FormatPicker({
               value={container}
               onChange={setContainer}
             />
+            {bestVideo && (
+              <span className="format-best" title={exactResolution(bestVideo)}>
+                Best detected:{' '}
+                <strong>{resolutionTier(bestVideo) ?? bestVideo.qualityLabel}</strong>
+                {resolutionTier(bestVideo) && ` · ${bestVideo.qualityLabel}`}
+              </span>
+            )}
           </div>
 
-          {hasVideo ? (
+          {selectableVideos.length > 0 ? (
             <div className="format-table" role="radiogroup" aria-label="Video quality">
               <div className="ft-head">
                 <span>Quality</span>
@@ -183,24 +225,26 @@ export function FormatPicker({
                 <span className="ft-right">Size</span>
               </div>
               <div className="ft-body">
-                {info.videoFormats.map((f) => (
+                {selectableVideos.map((f) => (
                   <button
                     key={f.formatId}
                     role="radio"
                     aria-checked={f.formatId === videoId}
                     className={`ft-row ${f.formatId === videoId ? 'selected' : ''}`}
+                    title={exactResolution(f)}
                     onClick={() => setVideoId(f.formatId)}
                   >
                     <span className="ft-quality">
                       <span className="ft-radio" />
                       {f.qualityLabel}
+                      {resolutionTier(f) && <span className="tag tag-4k">{resolutionTier(f)}</span>}
                       {f.dynamicRange && f.dynamicRange !== 'SDR' && (
                         <span className="tag tag-hdr">{f.dynamicRange}</span>
                       )}
                       {f.isProgressive && <span className="tag">with audio</span>}
                     </span>
                     <span className="ft-codec">{f.vcodec || '—'}</span>
-                    <span className="ft-ext">{f.ext.toUpperCase()}</span>
+                    <span className="ft-ext">{formatContainerSource(container, f.ext)}</span>
                     <span className="ft-right ft-size">
                       {formatBytes(f.filesize, f.filesizeIsApprox)}
                     </span>
@@ -209,7 +253,11 @@ export function FormatPicker({
               </div>
             </div>
           ) : (
-            <div className="empty-note">No video streams found for this link.</div>
+            <div className="empty-note">
+              {hasVideo
+                ? `No complete streams can be remuxed to ${container.toUpperCase()} without re-encoding. Try MKV.`
+                : 'No video streams found for this link.'}
+            </div>
           )}
         </div>
       ) : (

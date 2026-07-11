@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { cpSync, existsSync } from 'fs'
+import { cpSync, existsSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import type { ExtensionInstallResult } from '@shared/types'
 
@@ -28,11 +28,38 @@ export function installBrowserExtension(): ExtensionInstallResult {
   if (!existsSync(join(src, 'manifest.json'))) {
     return { ok: false, error: 'The bundled extension files were not found.' }
   }
+
+  const dest = installDir()
+  const staging = `${dest}.staging`
+  const backup = `${dest}.backup`
   try {
-    const dest = installDir()
-    cpSync(src, dest, { recursive: true })
+    // Build a complete replacement first. Copying over the old directory leaves
+    // removed scripts behind, which can make an unpacked extension run a mixture
+    // of releases.
+    rmSync(staging, { recursive: true, force: true })
+    rmSync(backup, { recursive: true, force: true })
+    cpSync(src, staging, { recursive: true })
+    writeFileSync(join(staging, '.snag-version'), app.getVersion(), 'utf8')
+
+    if (existsSync(dest)) renameSync(dest, backup)
+    try {
+      renameSync(staging, dest)
+    } catch (err) {
+      if (existsSync(backup) && !existsSync(dest)) renameSync(backup, dest)
+      throw err
+    }
+    rmSync(backup, { recursive: true, force: true })
     return { ok: true, path: dest }
   } catch (err) {
+    rmSync(staging, { recursive: true, force: true })
     return { ok: false, error: (err as Error).message }
   }
+}
+
+// Refresh an already-installed unpacked copy whenever Snag starts. Chrome keeps
+// loading the same stable folder; after an app update the user only needs to
+// press Reload on chrome://extensions to activate changed extension scripts.
+export function refreshInstalledBrowserExtension(): ExtensionInstallResult | null {
+  if (!getInstalledExtensionPath()) return null
+  return installBrowserExtension()
 }

@@ -1,5 +1,6 @@
 import { join } from 'path'
 import type { DownloadRequest, Settings } from '@shared/types'
+import { CONTAINER_CODEC_PATTERNS } from '@shared/container'
 
 export const PROGRESS_PREFIX = 'SNAGPROG|'
 
@@ -12,6 +13,7 @@ export const PROGRESS_TEMPLATE =
 
 export interface BuildContext {
   ffmpegLocation: string | null
+  nodeRuntimePath?: string | null
 }
 
 // Pure: turns a request + settings into the full yt-dlp argument vector
@@ -29,6 +31,10 @@ export function buildDownloadArgs(
     '--progress-template',
     PROGRESS_TEMPLATE
   ]
+
+  if (ctx.nodeRuntimePath) {
+    args.push('--no-js-runtimes', '--js-runtimes', `node:${ctx.nodeRuntimePath}`)
+  }
 
   if (req.downloadWholePlaylist) args.push('--yes-playlist')
   else args.push('--no-playlist')
@@ -71,20 +77,49 @@ export function buildDownloadArgs(
 
 function buildVideoArgs(req: DownloadRequest, settings: Settings, args: string[]): void {
   const container = req.mergeContainer || settings.preferredVideoContainer
-  let selector: string
-  if (req.videoFormatId) {
-    selector = req.audioFormatId
+  const selector = buildVideoSelector(req, container)
+  args.push('-f', selector)
+
+  // merge-output-format applies only when separate video/audio streams are merged.
+  // remux-video also applies to progressive (already muxed) downloads, so the
+  // container shown in the UI is the extension the user actually receives.
+  args.push('--merge-output-format', container)
+  args.push('--remux-video', container)
+}
+
+// Exact format IDs can be incompatible with a container selected after analysis
+// (for example H.264/AAC in WebM). Filter exact choices by compatible codecs and
+// fall back to the best compatible streams rather than handing ffmpeg a mux that
+// is guaranteed to fail. MKV accepts the codecs exposed by the supported sites.
+export function buildVideoSelector(
+  req: Pick<DownloadRequest, 'videoFormatId' | 'audioFormatId'>,
+  container: 'mp4' | 'mkv' | 'webm'
+): string {
+  if (container === 'mkv') {
+    if (!req.videoFormatId) return 'bv*+ba/b'
+    return req.audioFormatId
       ? `${req.videoFormatId}+${req.audioFormatId}`
       : req.videoFormatId
-  } else if (container === 'mp4') {
-    // Prefer codecs that actually fit an mp4 container (avc1/av01 + m4a), so the
-    // "best" fallback doesn't silently spill into .mkv on VP9-only sources.
-    selector = "bv*[vcodec~='^(avc1|av01|h264|hev1|hvc1)']+ba[ext=m4a]/bv*+ba/b"
-  } else {
-    selector = 'bv*+ba/b'
   }
-  args.push('-f', selector)
-  args.push('--merge-output-format', container)
+
+  const patterns = CONTAINER_CODEC_PATTERNS[container]
+  const videoFilter = `[vcodec~='${patterns.video}']`
+  const audioFilter = `[acodec~='${patterns.audio}']`
+  const splitFallback = `bv*${videoFilter}+ba${audioFilter}`
+  const progressiveFallback = `b${videoFilter}${audioFilter}`
+
+  if (!req.videoFormatId) return `${splitFallback}/${progressiveFallback}`
+
+  if (req.audioFormatId) {
+    const exact = `${req.videoFormatId}${videoFilter}+${req.audioFormatId}${audioFilter}`
+    return `${exact}/${splitFallback}/${progressiveFallback}`
+  }
+
+  // The selected row may be progressive (needs a compatible audio codec) or
+  // video-only (acodec=none). Express both without knowing which one yt-dlp ID is.
+  const exactProgressive = `${req.videoFormatId}${videoFilter}${audioFilter}`
+  const exactVideoOnly = `${req.videoFormatId}${videoFilter}[acodec=none]`
+  return `${exactProgressive}/${exactVideoOnly}/${splitFallback}/${progressiveFallback}`
 }
 
 function buildAudioArgs(req: DownloadRequest, settings: Settings, args: string[]): void {
