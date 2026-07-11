@@ -1,0 +1,13 @@
+Snag packages yt-dlp and FFmpeg as separate command-line programs.
+
+yt-dlp
+  Project: https://github.com/yt-dlp/yt-dlp
+  License: The Unlicense
+  Source and releases: https://github.com/yt-dlp/yt-dlp/releases
+
+FFmpeg
+  Project: https://ffmpeg.org/
+  License: LGPL 2.1 or later; particular distributed builds may enable GPL components
+  Source: https://ffmpeg.org/download.html#get-sources
+
+Run `yt-dlp --version` and `ffmpeg -version` to inspect the exact bundled builds.

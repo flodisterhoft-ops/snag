@@ -1,0 +1,10 @@
+node_modules
+dist
+out
+.DS_Store
+*.log
+build/tools/yt-dlp*
+build/tools/ffmpeg*
+.claude/settings.local.json
+.codex/
+.agents/
