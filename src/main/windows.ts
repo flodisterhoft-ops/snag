@@ -3,6 +3,11 @@ import { join, normalize, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import type { BrowserHandoff, UpdateAvailability } from '@shared/types'
 import { isSafeExternalUrl } from './protocol'
+import { loadSettings } from './settings'
+// Explicit window icon: the running app's taskbar button then never depends on
+// Windows resolving the exe icon (which a stale icon cache can break after
+// in-place upgrades).
+import appIconPath from '../../build/icon.ico?asset'
 
 let mainWindow: BrowserWindow | null = null
 let quickWindow: BrowserWindow | null = null
@@ -132,11 +137,21 @@ export function createMainWindow(): BrowserWindow {
     autoHideMenuBar: true,
     backgroundColor: '#0d0e12',
     title: 'Snag',
+    icon: appIconPath,
     webPreferences: webPreferences()
   })
 
   mainWindow = win
   win.on('ready-to-show', () => win.show())
+  // In tray mode the X button hides the window (kept warm for an instant
+  // reopen from the tray) instead of destroying it. With tray mode off, the
+  // window closes normally and the app quits once downloads finish.
+  win.on('close', (event) => {
+    if (isQuitting || !loadSettings().runInBackground) return
+    event.preventDefault()
+    win.hide()
+    windowIdleProbe?.()
+  })
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null
     windowIdleProbe?.()
@@ -183,6 +198,7 @@ function createQuickWindow(options: { reveal: boolean }): BrowserWindow {
     autoHideMenuBar: true,
     backgroundColor: '#0d0e12',
     title: 'Snag — quick download',
+    icon: appIconPath,
     webPreferences: webPreferences()
   })
 
