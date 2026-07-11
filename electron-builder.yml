@@ -7,6 +7,7 @@ files:
   # Explicit allowlist: never package local agent settings, source, tests,
   # docs, scripts, repository metadata, or other workspace files in app.asar.
   - out/**/*
+  - resources/tray.png
   - package.json
   - LICENSE
 extraResources:

@@ -1,11 +1,19 @@
 import { Tray, Menu, app, nativeImage } from 'electron'
 import trayIconPath from '../../resources/tray.png?asset'
+import appIconPath from '../../build/icon.ico?asset'
 
 let tray: Tray | null = null
 
 export function createTray(onOpen: () => void): void {
   if (tray) return
-  tray = new Tray(nativeImage.createFromPath(trayIconPath))
+  const bundledTrayIcon = nativeImage.createFromPath(trayIconPath)
+  const trayImage = bundledTrayIcon.isEmpty()
+    ? nativeImage.createFromPath(appIconPath)
+    : bundledTrayIcon
+  if (trayImage.isEmpty()) {
+    console.error('[snag] Both packaged tray icon assets are missing.')
+  }
+  tray = new Tray(trayImage)
   tray.setToolTip('Snag')
   tray.setContextMenu(
     Menu.buildFromTemplate([
