@@ -2,12 +2,20 @@ import { app, BrowserWindow } from 'electron'
 import { resolve } from 'path'
 import { registerIpc } from './ipc'
 import { deepLinkFromArgv, parseDeepLink, PROTOCOL_SCHEME } from './protocol'
-import { ensureMainWindow, deliverExternalUrl, publishUpdateAvailability } from './windows'
+import {
+  ensureMainWindow,
+  deliverExternalUrl,
+  publishUpdateAvailability,
+  prewarmQuickWindow,
+  hasVisibleWindow,
+  setWindowIdleProbe
+} from './windows'
 import { createTray, setTrayActiveCount } from './tray'
 import { loadSettings } from './settings'
 import { downloadManager } from './downloader'
 import { checkForUpdates, shouldAutoCheck } from './updates'
 import { refreshInstalledBrowserExtension } from './extension'
+import { applyLaunchAtLogin, TRAY_START_FLAG } from './startup'
 
 // Windows: needed for notifications to show the app identity/name correctly.
 if (process.platform === 'win32') {
@@ -45,10 +53,11 @@ app.on('open-url', (event, rawUrl) => {
 })
 
 // Quit once the last download finishes if the user closed all windows and
-// doesn't want Snag lingering in the tray.
+// doesn't want Snag lingering in the tray. The warm (hidden) quick window
+// still counts as "closed" here — only visible windows keep the app alive.
 function maybeQuitWhenIdle(): void {
   if (
-    BrowserWindow.getAllWindows().length === 0 &&
+    !hasVisibleWindow() &&
     !loadSettings().runInBackground &&
     !downloadManager.hasActiveWork()
   ) {
@@ -72,6 +81,10 @@ if (!gotLock) {
     downloadManager.initializePersistence()
     registerIpc()
     createTray(() => ensureMainWindow())
+    setWindowIdleProbe(maybeQuitWhenIdle)
+
+    // Heal the login-item registration (a moved portable exe changes paths).
+    applyLaunchAtLogin(loadSettings().launchAtLogin)
 
     const extensionRefresh = refreshInstalledBrowserExtension()
     if (extensionRefresh && !extensionRefresh.ok) {
@@ -92,11 +105,17 @@ if (!gotLock) {
     updateTray()
 
     // Cold start via a protocol click opens only the window the handoff needs.
+    // A login-item start stays in the tray entirely (no window at all).
+    const trayStart = process.argv.includes(TRAY_START_FLAG)
     const coldUrl = deepLinkFromArgv(process.argv)
     if (coldUrl) routeDeepLink(coldUrl)
     const queuedOpenUrls = pendingOpenUrls.splice(0)
     for (const url of queuedOpenUrls) routeDeepLink(url)
-    if (!coldUrl && queuedOpenUrls.length === 0) ensureMainWindow()
+    if (!coldUrl && queuedOpenUrls.length === 0 && !trayStart) ensureMainWindow()
+
+    // Load the quick popup invisibly once startup work settles, so the first
+    // browser handoff appears instantly instead of booting a renderer.
+    setTimeout(() => prewarmQuickWindow(), 1200)
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) ensureMainWindow()

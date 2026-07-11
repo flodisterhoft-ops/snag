@@ -16,6 +16,7 @@ import {
   publishUpdateAvailability
 } from './windows'
 import { installBrowserExtension, getInstalledExtensionPath } from './extension'
+import { applyLaunchAtLogin } from './startup'
 import { isHttpUrl } from './protocol'
 import { checkForUpdates } from './updates'
 import type {
@@ -112,6 +113,9 @@ export function registerIpc(): void {
       next.parallelDownloads > previous.parallelDownloads
     ) {
       downloadManager.reschedule()
+    }
+    if ('launchAtLogin' in patch && next.launchAtLogin !== previous.launchAtLogin) {
+      applyLaunchAtLogin(next.launchAtLogin)
     }
     return next
   })

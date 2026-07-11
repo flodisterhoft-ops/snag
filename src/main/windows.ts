@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, screen, shell } from 'electron'
 import { join, normalize, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import type { BrowserHandoff, UpdateAvailability } from '@shared/types'
@@ -6,6 +6,24 @@ import { isSafeExternalUrl } from './protocol'
 
 let mainWindow: BrowserWindow | null = null
 let quickWindow: BrowserWindow | null = null
+
+// Once quitting starts, the quick window's hide-instead-of-close interception
+// must stand down or app.quit() would be blocked forever.
+let isQuitting = false
+app.on('before-quit', () => {
+  isQuitting = true
+})
+
+// Lets index.ts re-evaluate quit-when-idle when a window closes or hides
+// ('window-all-closed' never fires while the warm quick window exists).
+let windowIdleProbe: (() => void) | null = null
+export function setWindowIdleProbe(probe: () => void): void {
+  windowIdleProbe = probe
+}
+
+export function hasVisibleWindow(): boolean {
+  return BrowserWindow.getAllWindows().some((win) => !win.isDestroyed() && win.isVisible())
+}
 
 // URLs are queued for the renderer they were intended for. A single process-
 // global slot lets a main window steal a quick-window handoff and drops rapid
@@ -121,6 +139,7 @@ export function createMainWindow(): BrowserWindow {
   win.on('ready-to-show', () => win.show())
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null
+    windowIdleProbe?.()
   })
 
   hardenNavigation(win)
@@ -137,14 +156,30 @@ export function ensureMainWindow(): BrowserWindow {
   return mainWindow
 }
 
-function createQuickWindow(): BrowserWindow {
+const QUICK_WIDTH = 460
+const QUICK_HEIGHT = 640
+const QUICK_MARGIN = 14
+
+// Pin the popup to the top-right of the screen the user is working on — the
+// same corner as the browser's extension buttons that trigger the handoff.
+function positionQuickWindow(win: BrowserWindow): void {
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+  const area = display.workArea
+  win.setPosition(
+    Math.round(area.x + area.width - QUICK_WIDTH - QUICK_MARGIN),
+    Math.round(area.y + QUICK_MARGIN)
+  )
+}
+
+function createQuickWindow(options: { reveal: boolean }): BrowserWindow {
   const win = new BrowserWindow({
-    width: 460,
-    height: 640,
+    width: QUICK_WIDTH,
+    height: QUICK_HEIGHT,
     resizable: false,
     frame: false,
     alwaysOnTop: true,
     show: false,
+    skipTaskbar: false,
     autoHideMenuBar: true,
     backgroundColor: '#0d0e12',
     title: 'Snag — quick download',
@@ -152,7 +187,19 @@ function createQuickWindow(): BrowserWindow {
   })
 
   quickWindow = win
-  win.on('ready-to-show', () => win.show())
+  positionQuickWindow(win)
+  if (options.reveal) {
+    win.once('ready-to-show', () => win.show())
+  }
+
+  // Keep the window (and its loaded renderer) warm: closing only hides it, so
+  // the next browser handoff appears instantly instead of cold-starting.
+  win.on('close', (event) => {
+    if (isQuitting) return
+    event.preventDefault()
+    win.hide()
+    windowIdleProbe?.()
+  })
   win.on('closed', () => {
     if (quickWindow === win) quickWindow = null
   })
@@ -163,8 +210,14 @@ function createQuickWindow(): BrowserWindow {
   return win
 }
 
+// Load the quick renderer invisibly ahead of time (first handoff is instant).
+export function prewarmQuickWindow(): void {
+  if (!quickWindow || quickWindow.isDestroyed()) createQuickWindow({ reveal: false })
+}
+
 export function ensureQuickWindow(): BrowserWindow {
-  if (!quickWindow || quickWindow.isDestroyed()) return createQuickWindow()
+  if (!quickWindow || quickWindow.isDestroyed()) return createQuickWindow({ reveal: true })
+  positionQuickWindow(quickWindow)
   quickWindow.show()
   quickWindow.focus()
   return quickWindow

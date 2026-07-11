@@ -64,8 +64,11 @@ export function SettingsScreen(): JSX.Element {
   const [form, setForm] = useState<Settings | null>(settings)
   const [updating, setUpdating] = useState(false)
   const [updateOutput, setUpdateOutput] = useState<string | null>(null)
-  // Local editable buffer so in-progress commas/spaces aren't normalized mid-keystroke.
+  // Local editable buffers so in-progress commas/spaces aren't normalized mid-keystroke.
   const [subLangText, setSubLangText] = useState(settings?.subtitles.languages.join(', ') ?? '')
+  const [audioLangText, setAudioLangText] = useState(
+    settings?.multiAudio.languages.join(', ') ?? ''
+  )
 
   const [extPath, setExtPath] = useState<string | null>(null)
   const [extError, setExtError] = useState<string | null>(null)
@@ -334,6 +337,41 @@ export function SettingsScreen(): JSX.Element {
         </Row>
       </Section>
 
+      <Section title="Audio languages">
+        <Row
+          title="Download all my languages"
+          desc="When a video offers multiple audio languages (like YouTube dubs), include every language below as a switchable track in the file"
+        >
+          <Toggle
+            checked={form.multiAudio.enabled}
+            onChange={(v) => set({ multiAudio: { ...form.multiAudio, enabled: v } })}
+            label="Download all my languages"
+          />
+        </Row>
+        {form.multiAudio.enabled && (
+          <Row title="My languages" desc="Comma-separated codes, e.g. en, de" stacked>
+            <input
+              className="text-input mono"
+              value={audioLangText}
+              spellCheck={false}
+              onChange={(e) => setAudioLangText(e.target.value)}
+              onBlur={() =>
+                set({
+                  multiAudio: {
+                    ...form.multiAudio,
+                    languages: audioLangText
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean)
+                  }
+                })
+              }
+              placeholder="en, de"
+            />
+          </Row>
+        )}
+      </Section>
+
       <Section title="Extras">
         <Row title="Embed cover art in audio" desc="Add the thumbnail as album art (MP3/M4A)">
           <Toggle
@@ -400,6 +438,16 @@ export function SettingsScreen(): JSX.Element {
             checked={form.runInBackground}
             onChange={(v) => set({ runInBackground: v })}
             label="Keep running in background"
+          />
+        </Row>
+        <Row
+          title="Start with Windows"
+          desc="Snag waits in the tray after login, so the quick popup opens instantly"
+        >
+          <Toggle
+            checked={form.launchAtLogin}
+            onChange={(v) => set({ launchAtLogin: v })}
+            label="Start with Windows"
           />
         </Row>
         <Row

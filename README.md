@@ -32,15 +32,19 @@ A fast, beautiful video & audio downloader for Windows — powered by
 
 ## ✨ Why Snag?
 
-- **Every quality, every format.** Full quality table from 4K60 down to 144p with codec,
-  container, and size — or audio-only as MP3, M4A, Opus, WAV, FLAC.
+- **Best quality in one tap.** A *Best quality* view shows the top resolution in each
+  container (MP4/MKV/WebM) side by side with total file sizes, so you can grab the
+  smallest 4K — or flip it off for the full table from 4K60 down to 144p with every
+  codec. Audio-only as MP3, M4A, Opus, WAV, FLAC.
 - **One click from Chrome.** An optional translucent button floats over supported HTML5
-  players; click it and Snag analyzes that page in its quick dialog.
+  players; click it and an instant quick dialog springs up in the top-right corner —
+  kept warm in the tray so there's no "starting up" wait.
 - **Fast where the stream supports it.** Up to 16 concurrent DASH/HLS fragments, a
   one-click *Maximum speed* preset (one active download and eight fragments), and live
   speed in MB/s **and** Mbps. Progressive single-file downloads may not get faster.
-- **Multi-language audio & subtitles.** Pick the audio track on multi-language videos;
-  download or embed captions.
+- **Multi-language audio & subtitles.** Set your languages once and Snag embeds every
+  one it finds (like YouTube's dubbed tracks) as switchable audio in a single file, or
+  pick a single track per download; plus download or embed captions.
 - **Playlists.** Grab a single video or the whole playlist into its own folder.
 - **Stays out of your way.** Runs in the tray, download queue with cancel/retry,
   desktop notification when done.

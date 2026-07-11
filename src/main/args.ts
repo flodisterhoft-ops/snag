@@ -11,6 +11,15 @@ export const PROGRESS_TEMPLATE =
   '%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|' +
   '%(progress._total_bytes_str)s|%(info.playlist_index)s|%(info.n_entries)s'
 
+// YouTube stopped serving dubbed audio tracks to yt-dlp's default player
+// clients (2026.01, android_vr fallback). The embedded web client still
+// returns every language track; "default" keeps the normal fallback chain
+// for videos that disallow embedding. Ignored by non-YouTube extractors.
+export const YOUTUBE_CLIENT_ARGS = [
+  '--extractor-args',
+  'youtube:player_client=web_embedded,default'
+] as const
+
 export interface BuildContext {
   ffmpegLocation: string | null
   nodeRuntimePath?: string | null
@@ -28,6 +37,7 @@ export function buildDownloadArgs(
     '--no-color',
     '--ignore-config',
     '--no-warnings',
+    ...YOUTUBE_CLIENT_ARGS,
     '--progress-template',
     PROGRESS_TEMPLATE
   ]
@@ -79,6 +89,12 @@ function buildVideoArgs(req: DownloadRequest, settings: Settings, args: string[]
   const container = req.mergeContainer || settings.preferredVideoContainer
   const selector = buildVideoSelector(req, container)
   args.push('-f', selector)
+  if (hasMultipleAudioTracks(req)) {
+    args.push('--audio-multistreams')
+    // The metadata post-processor writes per-stream language tags; without it
+    // players label the dubbed track "und" (undefined) instead of its language.
+    if (!settings.embedMetadata) args.push('--embed-metadata')
+  }
 
   // merge-output-format applies only when separate video/audio streams are merged.
   // remux-video also applies to progressive (already muxed) downloads, so the
@@ -87,16 +103,25 @@ function buildVideoArgs(req: DownloadRequest, settings: Settings, args: string[]
   args.push('--remux-video', container)
 }
 
+function hasMultipleAudioTracks(
+  req: Pick<DownloadRequest, 'audioFormatIds'>
+): req is { audioFormatIds: string[] } {
+  return !!req.audioFormatIds && req.audioFormatIds.length >= 2
+}
+
 // Exact format IDs can be incompatible with a container selected after analysis
 // (for example H.264/AAC in WebM). Filter exact choices by compatible codecs and
 // fall back to the best compatible streams rather than handing ffmpeg a mux that
 // is guaranteed to fail. MKV accepts the codecs exposed by the supported sites.
 export function buildVideoSelector(
-  req: Pick<DownloadRequest, 'videoFormatId' | 'audioFormatId'>,
+  req: Pick<DownloadRequest, 'videoFormatId' | 'audioFormatId' | 'audioFormatIds'>,
   container: 'mp4' | 'mkv' | 'webm'
 ): string {
+  const multiAudioIds = hasMultipleAudioTracks(req) ? req.audioFormatIds : null
+
   if (container === 'mkv') {
     if (!req.videoFormatId) return 'bv*+ba/b'
+    if (multiAudioIds) return `${req.videoFormatId}+${multiAudioIds.join('+')}`
     return req.audioFormatId
       ? `${req.videoFormatId}+${req.audioFormatId}`
       : req.videoFormatId
@@ -109,6 +134,15 @@ export function buildVideoSelector(
   const progressiveFallback = `b${videoFilter}${audioFilter}`
 
   if (!req.videoFormatId) return `${splitFallback}/${progressiveFallback}`
+
+  if (multiAudioIds) {
+    // Every track keeps the codec guard so an ID that cannot be muxed into the
+    // container falls through to the single-audio selection instead of MKV.
+    const tracks = multiAudioIds.map((id) => `${id}${audioFilter}`).join('+')
+    const exactMulti = `${req.videoFormatId}${videoFilter}+${tracks}`
+    const primary = `${req.videoFormatId}${videoFilter}+${multiAudioIds[0]}${audioFilter}`
+    return `${exactMulti}/${primary}/${splitFallback}/${progressiveFallback}`
+  }
 
   if (req.audioFormatId) {
     const exact = `${req.videoFormatId}${videoFilter}+${req.audioFormatId}${audioFilter}`

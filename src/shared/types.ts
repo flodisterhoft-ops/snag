@@ -88,6 +88,9 @@ export interface DownloadRequest {
   // video
   videoFormatId?: string
   audioFormatId?: string
+  // Two or more audio tracks to embed as switchable streams (primary first).
+  // Takes precedence over audioFormatId when present.
+  audioFormatIds?: string[]
   mergeContainer?: VideoContainer
   // audio-only
   audioLanguage?: string | null
@@ -144,6 +147,13 @@ export interface SpeedLimit {
 // What a browser handoff (snag:// link) opens: the compact quick dialog or the full app.
 export type BrowserHandoff = 'quick' | 'main'
 
+// Preferred spoken languages: when a video carries several audio tracks
+// (YouTube dubs), every matching language is embedded as a switchable track.
+export interface MultiAudioSettings {
+  enabled: boolean
+  languages: string[]
+}
+
 export interface Settings {
   defaultSaveDir: string
   speedLimit: SpeedLimit
@@ -163,6 +173,11 @@ export interface Settings {
   browserHandoff: BrowserHandoff
   // Keep Snag alive in the tray when all windows close, so downloads continue.
   runInBackground: boolean
+  // Start with Windows (tray only) so the quick popup opens instantly.
+  launchAtLogin: boolean
+  // Condensed picker: one best-quality row per container instead of the table.
+  bestQualityMode: boolean
+  multiAudio: MultiAudioSettings
   // Look for Snag/yt-dlp updates about once a day.
   autoCheckUpdates: boolean
   // Timestamp of the last automatic update check (internal, not shown in UI).

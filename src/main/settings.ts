@@ -27,6 +27,9 @@ function defaultSettings(): Settings {
     embedMetadata: true,
     browserHandoff: 'quick',
     runInBackground: true,
+    launchAtLogin: false,
+    bestQualityMode: true,
+    multiAudio: { enabled: false, languages: ['en', 'de'] },
     autoCheckUpdates: true,
     lastUpdateCheck: 0
   }
@@ -44,7 +47,8 @@ function merge(base: Settings, stored: Partial<Settings>): Settings {
     ...base,
     ...stored,
     speedLimit: { ...base.speedLimit, ...(stored.speedLimit || {}) },
-    subtitles: { ...base.subtitles, ...(stored.subtitles || {}) }
+    subtitles: { ...base.subtitles, ...(stored.subtitles || {}) },
+    multiAudio: { ...base.multiAudio, ...(stored.multiAudio || {}) }
   }
 }
 

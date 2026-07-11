@@ -1,6 +1,7 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { languageLabel } from '@shared/languages'
+import { YOUTUBE_CLIENT_ARGS } from './args'
 import {
   locateYtdlp,
   runYtdlpJson,
@@ -331,7 +332,7 @@ export async function analyze(
   if (!trimmed) throw new Error('Please paste a link first.')
 
   const raw = (await runYtdlpJson(
-    ['-J', '--no-playlist', '--no-warnings', '--ignore-config', trimmed],
+    ['-J', '--no-playlist', '--no-warnings', '--ignore-config', ...YOUTUBE_CLIENT_ARGS, trimmed],
     ytdlpOverride
   )) as RawInfo
 

@@ -42,6 +42,29 @@ export function QuickApp(): JSX.Element {
     }
   }, [])
 
+  // "Closing" the popup only hides the warm window. Reset to the waiting state
+  // so the next handoff never flashes the previous video.
+  useEffect(() => {
+    const onVisibilityChange = (): void => {
+      if (document.visibilityState !== 'hidden') return
+      analysisRequest.current += 1
+      if (closeTimer.current != null) {
+        window.clearTimeout(closeTimer.current)
+        closeTimer.current = null
+      }
+      setUrl('')
+      setAnalyzing(false)
+      setError(null)
+      setInfo(null)
+      setSelection(null)
+      setDone(false)
+      setSubmitting(false)
+      submittingRef.current = false
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [])
+
   const runAnalyze = async (target: string): Promise<void> => {
     const requestId = ++analysisRequest.current
     if (closeTimer.current != null) {
