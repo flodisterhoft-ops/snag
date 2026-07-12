@@ -9,7 +9,7 @@ import { shortPath } from '../lib/format'
 // Compact browser-handoff dialog: analyze the handed-off link, confirm format
 // and folder, download, close. Playlists and subtitles stay in the full app.
 export function QuickApp(): JSX.Element {
-  const { ready, startupError, settings, updateSettings, handoffUrl, clearHandoffUrl } = useStore()
+  const { ready, startupError, settings, updateSettings, handoff, clearHandoffUrl } = useStore()
 
   const [url, setUrl] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
@@ -28,12 +28,14 @@ export function QuickApp(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings])
 
+  // Keyed on the handoff seq, not the URL, so repeated clicks on the same link
+  // each re-fire instead of collapsing on string equality.
   useEffect(() => {
-    if (!handoffUrl) return
+    if (!handoff) return
     clearHandoffUrl()
-    void runAnalyze(handoffUrl)
+    void runAnalyze(handoff.url)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handoffUrl])
+  }, [handoff?.seq])
 
   useEffect(() => {
     return () => {

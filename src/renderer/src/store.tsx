@@ -19,6 +19,13 @@ import { applyProgressUpdate, removeFinishedJobs, removeJobById } from './jobSta
 
 export type View = 'home' | 'queue' | 'settings'
 
+// A single browser handoff. The seq distinguishes repeat handoffs of the same
+// URL so effect consumers keyed on it re-fire for every click.
+export interface Handoff {
+  url: string
+  seq: number
+}
+
 interface Store {
   ready: boolean
   startupError: string | null
@@ -37,7 +44,9 @@ interface Store {
   refreshTools: () => Promise<void>
   appVersion: string | null
   // URL handed off from the browser via snag://, waiting to be analyzed.
-  handoffUrl: string | null
+  // Each handoff carries a unique seq so consumers re-fire even when the same
+  // URL is handed off twice in a row.
+  handoff: Handoff | null
   clearHandoffUrl: () => void
   // Available updates (auto-check or manual), shown by the update banner.
   updates: UpdateAvailability | null
@@ -60,7 +69,8 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
   const [jobs, setJobs] = useState<DownloadJob[]>([])
   const [toolStatus, setToolStatus] = useState<ToolStatus | null>(null)
   const [appVersion, setAppVersion] = useState<string | null>(null)
-  const [handoffUrls, setHandoffUrls] = useState<string[]>([])
+  const [handoffs, setHandoffs] = useState<Handoff[]>([])
+  const handoffSeq = useRef(0)
   const [updates, setUpdates] = useState<UpdateAvailability | null>(null)
   const jobsRef = useRef<DownloadJob[]>([])
   jobsRef.current = jobs
@@ -114,7 +124,8 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
     // single React state update.
     const receiveUrl = (url: string): void => {
       if (!mounted || !url) return
-      setHandoffUrls((prev) => [...prev, url])
+      handoffSeq.current += 1
+      setHandoffs((prev) => [...prev, { url, seq: handoffSeq.current }])
       setView('home')
     }
     const offExternal = window.api.onExternalUrl(receiveUrl)
@@ -192,8 +203,8 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
     toolStatus,
     refreshTools,
     appVersion,
-    handoffUrl: handoffUrls[0] ?? null,
-    clearHandoffUrl: () => setHandoffUrls((prev) => prev.slice(1)),
+    handoff: handoffs[0] ?? null,
+    clearHandoffUrl: () => setHandoffs((prev) => prev.slice(1)),
     updates,
     setUpdates
   }
