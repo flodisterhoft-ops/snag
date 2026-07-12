@@ -3,6 +3,13 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.8.0 — 2026-07-12
+
+- Redesign the Chrome quality picker into a compact single-decision panel: a quality list with inline MP4/MKV/WEBM chips, a sliding Video/Audio toggle, and a Download button that collapses into in-place progress.
+- Default the video container automatically — MKV when merging multiple audio languages, MP4 otherwise — instead of asking every time.
+- Add a Cancel action to the in-page download progress view.
+- Move audio-language preferences out of the picker and into Settings as selectable pills, applied automatically whenever a video offers those languages.
+
 ## 1.7.2 — 2026-07-11
 
 - Restore the update dialog after it is hidden while a download continues.
