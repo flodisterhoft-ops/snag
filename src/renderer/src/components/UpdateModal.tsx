@@ -19,15 +19,18 @@ export function UpdateModal(): JSX.Element | null {
   const [progress, setProgress] = useState<AppUpdateProgress | null>(null)
   const [appError, setAppError] = useState<string | null>(null)
   const [restarting, setRestarting] = useState(false)
-  const downloadStarted = useRef(false)
+  const downloadTarget = useRef<string | null>(null)
 
   const hasUpdate = !!updates && (!!updates.app || !!updates.ytdlp)
-  const hasAppUpdate = !!updates?.app
+  const appUpdateVersion = updates?.app?.latest ?? null
 
   // Kick off the in-app download as soon as the pop-up shows the app update.
   useEffect(() => {
-    if (!hasAppUpdate || downloadStarted.current) return
-    downloadStarted.current = true
+    if (!appUpdateVersion || downloadTarget.current === appUpdateVersion) return
+    downloadTarget.current = appUpdateVersion
+    setAppPhase('starting')
+    setProgress(null)
+    setAppError(null)
 
     const offProgress = window.api.onAppUpdateProgress((p) => {
       setAppPhase('downloading')
@@ -63,10 +66,12 @@ export function UpdateModal(): JSX.Element | null {
       offDownloaded()
       offError()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasAppUpdate])
+  }, [appUpdateVersion])
 
   const dismiss = (): void => {
+    // Allow this same release to reconnect to the main-process updater when the
+    // user reopens the dialog after hiding it during a background download.
+    downloadTarget.current = null
     void window.api.dismissUpdates()
     setUpdates(null)
   }

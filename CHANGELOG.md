@@ -3,6 +3,13 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.7.2 — 2026-07-11
+
+- Restore the update dialog after it is hidden while a download continues.
+- Recover completed installers from the updater cache after Snag restarts.
+- Revalidate cached update versions so a rapid follow-up release is not mistaken for the latest one.
+- Record updater activity in `updater.log` for easier diagnosis.
+
 ## 1.7.1 — 2026-07-11
 
 - Compact Chrome file-type tiles into two lines with size as the primary text.
