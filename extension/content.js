@@ -9,7 +9,7 @@
   const MIN_HEIGHT = 140
   const BTN_SIZE = 36
   const INSET = 10
-  const PANEL_WIDTH = 400
+  const PANEL_WIDTH = 300
   const HOST = location.hostname
 
   let disabled = false
@@ -123,14 +123,8 @@
     if (height <= 0) return 'Best'
     if (height >= 4320) return '8K'
     if (height >= 2160) return '4K'
+    if (height >= 1440) return '2K'
     return `${height}p`
-  }
-
-  function meaningfulSmallest(rows) {
-    const known = rows.filter((r) => r.total != null).sort((a, b) => a.total - b.total)
-    if (known.length < 2) return null
-    const threshold = Math.max(10 * 1024 * 1024, known[1].total * 0.01)
-    return known[1].total - known[0].total >= threshold ? known[0] : null
   }
 
   function recommendedRow(rows, multipleAudio, preferred) {
@@ -178,8 +172,9 @@
   const PANEL_CSS = `
     :host { all: initial; }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+    .num { font-variant-numeric: tabular-nums; }
     .panel {
-      width: ${PANEL_WIDTH}px; max-height: 74vh; overflow-y: auto; overscroll-behavior: contain;
+      width: ${PANEL_WIDTH}px; max-height: 78vh; overflow-y: auto; overscroll-behavior: contain;
       background: linear-gradient(180deg, #191c23, #14161c); color: #eef0f3;
       border: 1px solid rgba(255,255,255,0.14); border-radius: 16px;
       box-shadow: 0 24px 60px -18px rgba(0,0,0,0.85);
@@ -192,81 +187,95 @@
     @keyframes snagOut { from { opacity: 1; transform: none; } to { opacity: .2; transform: scale(0.09); border-radius: 50%; } }
     .panel::-webkit-scrollbar { width: 9px; }
     .panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
-    .head { display: flex; align-items: center; gap: 9px; padding: 13px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); position: sticky; top: 0; background: #191c23; z-index: 2; border-radius: 16px 16px 0 0; }
-    .dot { width: 24px; height: 24px; border-radius: 7px; flex-shrink: 0; background: linear-gradient(150deg, #c6f24d, #a9e02f); display: grid; place-items: center; }
-    .dot svg { width: 14px; height: 14px; stroke: #17200a; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-    .title { flex: 1; font-weight: 600; font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    .x { width: 26px; height: 26px; border: 0; background: none; color: #a7adb7; cursor: pointer; border-radius: 7px; font-size: 15px; flex-shrink: 0; }
+    .panel button { font-family: inherit; }
+
+    /* header */
+    .head { display: flex; align-items: center; gap: 10px; padding: 11px 12px 10px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    .thumb { width: 58px; height: 36px; border-radius: 8px; flex-shrink: 0; position: relative; overflow: hidden; background: linear-gradient(135deg,#2c3446 0%,#1a2030 55%,#39303f 100%); }
+    .thumb::after { content: ''; position: absolute; inset: 0; margin: auto; width: 0; height: 0; border-left: 9px solid rgba(255,255,255,0.85); border-top: 6px solid transparent; border-bottom: 6px solid transparent; }
+    .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .head-txt { flex: 1; min-width: 0; }
+    .head-txt .t { font-weight: 600; font-size: 13px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .head-txt .m { color: #6f757f; font-size: 11px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dot { width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0; background: linear-gradient(150deg,#c6f24d,#a9e02f); display: grid; place-items: center; }
+    .dot svg { width: 15px; height: 15px; stroke: #17200a; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+    .x { width: 26px; height: 26px; border: 0; background: none; color: #a7adb7; cursor: pointer; border-radius: 7px; font-size: 14px; flex-shrink: 0; }
     .x:hover { background: rgba(255,255,255,0.08); color: #fff; }
-    .body { padding: 13px 14px 14px; display: flex; flex-direction: column; gap: 12px; }
-    .center { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 26px 12px; color: #a7adb7; text-align: center; }
+
+    /* segmented Video / Audio */
+    .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin: 10px 12px 0; padding: 3px; background: #0f1116; border: 1px solid rgba(255,255,255,0.07); border-radius: 11px; position: relative; }
+    .seg-ind { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 4px); background: #252a34; border-radius: 8px; transition: left .22s cubic-bezier(.3,.8,.3,1); }
+    .seg.audio .seg-ind { left: calc(50% + 1px); }
+    .seg button { position: relative; z-index: 1; padding: 6px 0; border: 0; border-radius: 8px; background: none; color: #a7adb7; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: color .18s; }
+    .seg button.on { color: #fff; }
+
+    /* quality list */
+    .list { padding: 8px 6px 2px; display: flex; flex-direction: column; gap: 1px; }
+    .qrow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; border: 0; border-radius: 9px; background: none; color: #eef0f3; cursor: pointer; text-align: left; transition: background .13s; }
+    .qrow:hover { background: rgba(255,255,255,0.045); }
+    .qrow:focus-visible { outline: 2px solid #c6f24d; outline-offset: -2px; }
+    .qrow .radio { width: 16px; height: 16px; border-radius: 50%; border: 1.6px solid rgba(255,255,255,0.28); flex-shrink: 0; display: grid; place-items: center; transition: border-color .15s; }
+    .qrow.on .radio { border-color: #c6f24d; }
+    .qrow .radio::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #c6f24d; transform: scale(0); transition: transform .18s cubic-bezier(.3,.8,.3,1); }
+    .qrow.on .radio::after { transform: scale(1); }
+    .qrow .q { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; }
+    .qrow .q strong { font-size: 13.5px; font-weight: 700; letter-spacing: 0.01em; }
+    .qrow .q strong em { font-style: normal; font-size: 10px; font-weight: 700; color: #8d949f; vertical-align: 1px; margin-left: 1px; }
+    .qrow .size { color: #a7adb7; font-size: 12.5px; width: 54px; text-align: right; flex-shrink: 0; }
+    .qrow.on .size { color: #eef0f3; font-weight: 600; }
+    .qrow.on .q { flex: 0 0 auto; }
+    .qrow.on .fchips { margin-left: auto; }
+    .fchips { display: flex; gap: 2px; flex-shrink: 0; position: relative; }
+    .fchip-ind { position: absolute; top: 0; bottom: 0; background: rgba(198,242,77,0.13); border: 1px solid #c6f24d; border-radius: 7px; transition: left .2s cubic-bezier(.3,.8,.3,1), width .2s cubic-bezier(.3,.8,.3,1); pointer-events: none; }
+    .fchips.no-trans .fchip-ind { transition: none; }
+    .fchip { position: relative; z-index: 1; padding: 3px 5px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.13); background: none; cursor: pointer; color: #a7adb7; font-size: 10px; font-weight: 700; letter-spacing: 0.03em; transition: border-color .13s, color .13s; }
+    .fchip:hover { border-color: rgba(255,255,255,0.3); }
+    .fchip.on { border-color: transparent; color: #eef0f3; }
+
+    /* audio tab */
+    .audio-view { padding: 12px 12px 4px; display: flex; flex-direction: column; gap: 12px; }
+    .audio-view .group .lbl2 { color: #6f757f; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 7px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .chip { flex: 1; min-width: 0; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 5px 6px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.13); background: #0f1116; color: #a7adb7; font-size: 11px; font-weight: 600; cursor: pointer; transition: border-color .13s, color .13s, background .13s; }
+    .chip:hover { border-color: rgba(255,255,255,0.3); }
+    .chip.on { background: rgba(198,242,77,0.13); border-color: #c6f24d; color: #eef0f3; }
+
+    /* footer: download / progress / done */
+    .foot { padding: 10px 12px 12px; border-top: 1px solid rgba(255,255,255,0.07); margin-top: 7px; display: flex; flex-direction: column; }
+    .stage-progress .foot, .stage-done .foot { border-top: 0; margin-top: 0; }
+    .go { width: 100%; padding: 11px 16px; border: 0; border-radius: 12px; cursor: pointer; background: linear-gradient(160deg,#c6f24d,#aee235); color: #17200a; display: flex; align-items: center; justify-content: space-between; gap: 10px; box-shadow: 0 10px 26px -12px rgba(198,242,77,0.55); transition: filter .15s, transform .1s; }
+    .go:hover { filter: brightness(1.05); }
+    .go:active { transform: translateY(1px); }
+    .go:disabled { opacity: 0.5; cursor: not-allowed; filter: none; box-shadow: none; }
+    .go .gl { font-weight: 800; font-size: 14px; }
+    .go .gs { font-size: 11px; font-weight: 700; opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .prog { display: none; flex-direction: column; gap: 9px; }
+    .prog .pt { display: flex; justify-content: space-between; align-items: baseline; }
+    .prog .pt strong { font-size: 13.5px; }
+    .prog .pt span { color: #c6f24d; font-weight: 800; font-size: 13.5px; }
+    .track { height: 8px; border-radius: 999px; background: #0f1116; border: 1px solid rgba(255,255,255,0.08); overflow: hidden; }
+    .fill { height: 100%; width: 0%; border-radius: inherit; background: linear-gradient(90deg,#aee235,#d5ff63); transition: width .3s ease; }
+    .pm { display: flex; justify-content: space-between; color: #a7adb7; font-size: 11px; }
+    .cancel { margin-top: 2px; width: 100%; padding: 7px; border: 1px solid rgba(255,255,255,0.13); border-radius: 9px; background: none; color: #a7adb7; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: border-color .13s, color .13s; }
+    .cancel:hover { border-color: rgba(255,157,148,0.5); color: #ff9d94; }
+    .done { display: none; align-items: center; gap: 10px; justify-content: center; padding: 6px 0; color: #eef0f3; font-weight: 700; font-size: 13.5px; }
+    .done .ok { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: rgba(198,242,77,0.15); border: 1.5px solid #c6f24d; color: #c6f24d; font-size: 13px; }
+    .stage-progress .go { display: none; }
+    .stage-progress .prog { display: flex; }
+    .stage-done .go { display: none; }
+    .stage-done .done { display: flex; }
+
+    /* message states (loading / not running / error) */
+    .center { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 26px 14px; color: #a7adb7; text-align: center; }
     .spin { width: 22px; height: 22px; border: 2.5px solid rgba(255,255,255,0.15); border-top-color: #c6f24d; border-radius: 50%; animation: snagSpin 0.8s linear infinite; }
     @keyframes snagSpin { to { transform: rotate(360deg); } }
-    .action-bar { display:flex; align-items:stretch; gap:8px; width:100%; }
-    .tabs { display: inline-flex; padding: 3px; background: #0f1116; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; gap: 2px; flex-shrink:0; }
-    .tab { padding: 6px 16px; border: 0; border-radius: 7px; background: none; color: #a7adb7; font-size: 12.5px; font-weight: 600; cursor: pointer; }
-    .tab.on { background: #20242c; color: #fff; }
-    .label { font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: #6f757f; font-weight: 700; }
-    .rows { display: flex; flex-direction: column; gap: 7px; }
-    .row { display: flex; align-items: center; gap: 11px; width: 100%; padding: 10px 12px; text-align: left; background: #0f1116; border: 1px solid rgba(255,255,255,0.12); border-radius: 11px; color: #eef0f3; cursor: pointer; }
-    .row:hover { border-color: rgba(255,255,255,0.22); }
-    .row.on { background: rgba(198,242,77,0.13); border-color: #c6f24d; }
-    .rdot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25); flex-shrink: 0; }
-    .row.on .rdot { border-color: #c6f24d; background: radial-gradient(circle, #c6f24d 42%, transparent 48%); }
-    .rc { font-weight: 800; font-size: 14px; min-width: 48px; letter-spacing: 0.03em; }
-    .rq { flex: 1; min-width: 0; }
-    .rq b { font-size: 13px; }
-    .rq small { display: block; color: #6f757f; font-size: 11px; }
-    .rs { text-align: right; font-family: Consolas, monospace; font-size: 12px; }
-    .rs .tag { display: block; font-size: 9.5px; color: #c6f24d; font-family: 'Segoe UI', sans-serif; font-weight: 700; }
-    .badge { display: inline-block; margin-left: 6px; padding: 1px 5px; border-radius: 4px; background: rgba(255,180,84,0.2); color: #ffb454; font-size: 9.5px; font-weight: 700; vertical-align: 2px; }
-    .pills { display: flex; flex-wrap: wrap; gap: 7px; }
-    .pill { padding: 6px 13px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.14); background: #0f1116; color: #a7adb7; font-size: 12px; font-weight: 600; cursor: pointer; }
-    .pill:hover { border-color: rgba(255,255,255,0.25); }
-    .pill.on { background: rgba(198,242,77,0.14); border-color: #c6f24d; color: #eef0f3; }
-    .pill.ghost { color: #6f757f; border-style: dashed; }
-    .more-wrap { overflow: hidden; max-height: 0; transition: max-height 0.25s ease; }
-    .more-wrap.open { max-height: 220px; }
-    .more-wrap .pills { padding-top: 7px; }
-    .note { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #a7adb7; }
-    .note::before { content: '✦'; color: #c6f24d; }
-    .choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
-    .quality-stack { display:flex; flex-direction:column; gap:7px; }
-    .quality-card { width:100%; padding:8px 9px; border-radius:12px; background:#111319; border:1px solid rgba(255,255,255,.10); transition:border-color .18s ease, background .18s ease; }
-    .quality-card.on { border-color:rgba(198,242,77,.55); background:rgba(198,242,77,.045); }
-    .quality-card-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
-    .quality-card-head strong { color:#eef0f3; font-size:13px; }
-    .quality-card-head small { color:#6f757f; font-size:10px; }
-    .choice { min-height: 42px; padding: 6px 7px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.14); background: #0f1116; color: #a7adb7; cursor: pointer; font-size: 12px; font-weight: 700; transition: transform .16s ease, background .16s ease, border-color .16s ease; }
-    .choice:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.28); }
-    .choice.on { background: rgba(198,242,77,.14); border-color: #c6f24d; color: #fff; transform: translateY(-1px); }
-    .choice-main { display:flex; align-items:center; justify-content:center; gap:5px; white-space:nowrap; }
-    .choice-main strong { color:#eef0f3; font-size:13px; font-family:Consolas,monospace; }
-    .choice-main span { padding:1px 4px; border-radius:4px; background:rgba(255,255,255,.08); color:#8d949f; font-size:9px; letter-spacing:.04em; }
-    .choice small { display:block; color:#6f757f; font-size:9px; font-weight:600; margin-top:1px; white-space:nowrap; }
-    .choice.on small { color:#aebd8a; }
-    .rec { color:#c6f24d !important; }
-    .dl { display: flex; flex:1; min-width:0; min-height:40px; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 5px 10px; border: 0; border-radius: 10px; background: linear-gradient(160deg, #c6f24d, #aee235); color: #17200a; font-weight: 800; font-size: 14px; cursor: pointer; box-shadow: 0 10px 26px -12px rgba(198,242,77,0.7); }
-    .dl:hover { filter: brightness(1.05); }
-    .dl:active { transform: translateY(1px); }
-    .dl:disabled { opacity: 0.45; cursor: not-allowed; }
-    .dl small { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size: 9.5px; font-weight: 700; opacity: 0.75; }
-    .more-qualities { width:100%; padding:6px; color:#7f8792; font-size:10.5px; border:1px dashed rgba(255,255,255,.13); border-radius:9px; cursor:pointer; }
-    .progress-card { display:flex; flex-direction:column; gap:12px; padding:8px 2px 4px; }
-    .progress-top { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
-    .progress-top strong { font-size:15px; }
-    .progress-top span { color:#c6f24d; font-weight:800; font-size:15px; }
-    .progress-track { height:10px; border-radius:999px; background:#0f1116; overflow:hidden; border:1px solid rgba(255,255,255,.08); }
-    .progress-fill { height:100%; border-radius:inherit; background:linear-gradient(90deg,#aee235,#d5ff63); transition:width .35s ease; }
-    .progress-meta { display:flex; justify-content:space-between; color:#a7adb7; font-size:11.5px; }
-    .ok-mark { width: 46px; height: 46px; border-radius: 50%; background: rgba(198,242,77,0.15); border: 1.5px solid #c6f24d; display: grid; place-items: center; color: #c6f24d; font-size: 22px; }
     .btn2 { padding: 9px 16px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.2); background: none; color: #eef0f3; font-size: 12.5px; font-weight: 600; cursor: pointer; }
     .btn2:hover { border-color: #c6f24d; }
     .accent2 { background: linear-gradient(160deg, #c6f24d, #aee235); color: #17200a; border: 0; font-weight: 800; }
     .err { color: #ff9d94; font-size: 12.5px; text-align: center; }
+
     @media (prefers-reduced-motion: reduce) {
-      .panel, .panel.closing, .spin { animation-duration: 0.001ms !important; }
-      .more-wrap { transition: none; }
+      .panel, .panel.closing, .spin, .seg-ind, .fchip-ind, .fill, .qrow .radio::after { animation-duration: 0.001ms !important; transition: none !important; }
     }
   `
 
@@ -324,10 +333,10 @@
     const pageUrl = resolveTargetUrl(video)
     const state = {
       info: null, defaults: null, kind: 'video',
-      rows: [], container: null, quality: 0, moreQualities: false,
-      groups: [], selectedLangs: [], moreOpen: false,
+      quality: 0, container: null,
+      groups: [], selectedLangs: [],
       audioLang: null, audioFmt: 'mp3',
-      busy: false, jobId: null, pollTimer: null
+      busy: false, jobId: null, pollTimer: null, cancelRequested: false
     }
 
     // ----- dismissal wiring -----
@@ -364,107 +373,8 @@
       }
     }
 
-    requestAnimationFrame(() => root.focus({ preventScroll: true }))
-
-    // ----- rendering -----
     const LOGO = '<svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>'
-
-    function header(title) {
-      const head = el('div', 'head')
-      const dot = el('span', 'dot')
-      dot.innerHTML = LOGO
-      const t = el('span', 'title', title)
-      const x = el('button', 'x', '✕')
-      x.type = 'button'
-      x.title = 'Close'
-      x.setAttribute('aria-label', 'Close download options')
-      x.addEventListener('click', () => closePanel())
-      head.append(dot, t, x)
-      return head
-    }
-
-    function renderShell(title, bodyNodes) {
-      root.textContent = ''
-      root.appendChild(header(title))
-      const body = el('div', 'body')
-      for (const n of bodyNodes) body.appendChild(n)
-      root.appendChild(body)
-    }
-
-    function renderLoading(msg) {
-      const c = el('div', 'center')
-      c.append(el('span', 'spin'), el('span', null, msg))
-      renderShell('Snag', [c])
-    }
-
-    function renderNotRunning() {
-      const c = el('div', 'center')
-      c.append(el('strong', null, "Snag isn't running"))
-      c.append(el('span', null, 'Start it once and downloads open right here.'))
-      const open = el('button', 'btn2 accent2', 'Open Snag')
-      open.addEventListener('click', () => { location.href = deepLink(pageUrl); closePanel() })
-      c.appendChild(open)
-      renderShell('Snag', [c])
-    }
-
-    function renderError(message) {
-      const c = el('div', 'center')
-      c.append(el('span', 'err', message))
-      const retry = el('button', 'btn2', 'Try again')
-      retry.addEventListener('click', start)
-      const app = el('button', 'btn2', 'Open in Snag app')
-      app.addEventListener('click', () => { location.href = deepLink(pageUrl); closePanel() })
-      c.append(retry, app)
-      renderShell('Snag', [c])
-    }
-
-    function renderDone() {
-      const c = el('div', 'center')
-      const mark = el('span', 'ok-mark', '✓')
-      c.append(mark, el('strong', null, 'Download complete'))
-      renderShell(state.info.title, [c])
-      state.jobId = null
-      setTimeout(() => closePanel(), 1400)
-    }
-
-    function renderProgress(job) {
-      const percent = Math.max(0, Math.min(100, Number(job.progress) || 0))
-      const card = el('div', 'progress-card')
-      const top = el('div', 'progress-top')
-      const label = job.status === 'queued' ? 'Waiting…' : job.status === 'processing' ? 'Finishing…' : 'Downloading'
-      top.append(el('strong', null, label), el('span', null, `${Math.round(percent)}%`))
-      const track = el('div', 'progress-track')
-      const fill = el('div', 'progress-fill')
-      fill.style.width = `${percent}%`
-      track.appendChild(fill)
-      const meta = el('div', 'progress-meta')
-      meta.append(el('span', null, job.speed || job.sizeLabel || ''), el('span', null, job.eta ? `ETA ${job.eta}` : ''))
-      card.append(top, track, meta)
-      renderShell(state.info.title, [card])
-    }
-
-    async function pollJob() {
-      if (!state.jobId || !panel || panel.host !== host) return
-      const res = await sendMessage({ type: 'snag:job', jobId: state.jobId })
-      if (!state.jobId || !panel || panel.host !== host) return
-      const job = res.ok && res.data && res.data.job
-      if (!job) {
-        renderError((res.data && res.data.error) || 'Could not read download progress.')
-        state.jobId = null
-        return
-      }
-      if (job.status === 'completed') {
-        renderDone()
-        return
-      }
-      if (job.status === 'error' || job.status === 'canceled') {
-        state.jobId = null
-        renderError(job.errorMessage || 'The download stopped.')
-        return
-      }
-      renderProgress(job)
-      state.pollTimer = setTimeout(pollJob, 500)
-    }
+    const noMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 
     function selectedGroups() {
       return state.selectedLangs
@@ -472,246 +382,454 @@
         .filter(Boolean)
     }
 
-    function saveFavoriteLanguages() {
-      const languages = state.selectedLangs.map(langBase).filter(Boolean)
-      if (!languages.length) return
-      state.defaults = {
-        ...(state.defaults || {}),
-        favorites: languages,
-        multiAudioEnabled: languages.length >= 2
-      }
-      void sendMessage({ type: 'snag:set-audio-favorites', languages })
+    function hostLabel() {
+      return HOST.replace(/^www\./, '')
     }
 
-    // Favorite pills first (ranked by settings order), the rest behind "More".
-    function pillSection(single) {
-      const wrap = el('div')
-      if (!state.info.hasMultipleAudioLanguages || state.groups.length < 2) return wrap
-      wrap.append(el('div', 'label', 'Audio tracks'))
-      wrap.lastChild.style.marginBottom = '7px'
-
-      const favs = (state.defaults?.favorites || ['en']).map(langBase)
-      const ranked = []
-      const rest = []
-      for (const base of favs) {
-        const g = state.groups.find((x) => x.language && langBase(x.language) === base)
-        if (g && !ranked.includes(g)) ranked.push(g)
-      }
-      for (const g of state.groups) {
-        if (!ranked.includes(g)) rest.push(g)
-      }
-      // Nothing favorited on this video: explicitly prefer English, then the
-      // video's declared default/original track.
-      if (!ranked.length) {
-        const def = state.groups.find((g) => langBase(g.language) === 'en') ||
-          state.groups.find((g) => g.isDefault) || state.groups[0]
-        ranked.push(def)
-        const i = rest.indexOf(def)
-        if (i >= 0) rest.splice(i, 1)
-      }
-
-      const mainRow = el('div', 'pills')
-      const moreWrap = el('div', 'more-wrap' + (state.moreOpen ? ' open' : ''))
-      const moreRow = el('div', 'pills')
-      moreWrap.appendChild(moreRow)
-
-      const toggle = (g) => {
-        const key = g.language || ''
-        if (single) {
-          state.audioLang = key
-        } else {
-          const i = state.selectedLangs.indexOf(key)
-          if (i >= 0) {
-            if (state.selectedLangs.length > 1) state.selectedLangs.splice(i, 1)
-          } else {
-            state.selectedLangs.push(key)
-          }
-        }
-        renderPicker()
-      }
-
-      const pillFor = (g) => {
-        const key = g.language || ''
-        const active = single ? state.audioLang === key : state.selectedLangs.includes(key)
-        const p = el('button', 'pill' + (active ? ' on' : ''), langLabel(g.language) + (g.isDefault ? ' ★' : ''))
-        p.addEventListener('click', () => toggle(g))
-        return p
-      }
-
-      for (const g of ranked) mainRow.appendChild(pillFor(g))
-      if (rest.length) {
-        const more = el('button', 'pill ghost', state.moreOpen ? 'Hide ▴' : `More (${rest.length}) ▾`)
-        more.addEventListener('click', () => {
-          const wasOpen = state.moreOpen
-          state.moreOpen = !state.moreOpen
-          if (wasOpen && !single) saveFavoriteLanguages()
-          renderPicker()
-        })
-        mainRow.appendChild(more)
-        for (const g of rest) moreRow.appendChild(pillFor(g))
-      }
-
-      wrap.append(mainRow, moreWrap)
-      if (!single && state.selectedLangs.length >= 2) {
-        const n = el('div', 'note', 'Both languages embedded as switchable tracks.')
-        n.style.marginTop = '8px'
-        wrap.appendChild(n)
-      }
-      return wrap
+    // Framerate shown next to the quality only when it beats standard 30.
+    function fpsForHeight(height) {
+      const at = (state.info.videoFormats || []).filter((f) => (f.height || 0) === height)
+      const max = at.length ? Math.max(...at.map((f) => f.fps || 0)) : 0
+      return max > 30 ? Math.round(max) : 0
     }
 
-    function renderPicker() {
+    function buildHeights() {
       const info = state.info
-      const nodes = []
+      const measured = [...new Set((info.videoFormats || []).map((f) => f.height || 0).filter(Boolean))]
+      const base = measured.length ? measured : (info.videoFormats || []).length ? [0] : []
+      return base
+        .sort((a, b) => b - a)
+        .filter((height) => rowsForQuality(info, selectedGroups(), height).length > 0)
+    }
 
-      // Tabs
-      const tabs = el('div', 'tabs')
-      for (const k of ['video', 'audio']) {
-        const t = el('button', 'tab' + (state.kind === k ? ' on' : ''), k === 'video' ? 'Video' : 'Audio')
-        t.addEventListener('click', () => { state.kind = k; renderPicker() })
-        tabs.appendChild(t)
+    // ----- message screens (loading / not running / error) -----
+    function renderMessage(children) {
+      if (state.pollTimer) clearTimeout(state.pollTimer)
+      root.classList.remove('stage-progress', 'stage-done')
+      root.textContent = ''
+      const head = el('div', 'head')
+      const dot = el('span', 'dot')
+      dot.innerHTML = LOGO
+      const txt = el('div', 'head-txt')
+      txt.appendChild(el('div', 't', 'Snag'))
+      const x = el('button', 'x', '✕')
+      x.type = 'button'
+      x.setAttribute('aria-label', 'Close download options')
+      x.addEventListener('click', () => closePanel())
+      head.append(dot, txt, x)
+      const body = el('div', 'center')
+      for (const n of children) body.appendChild(n)
+      root.append(head, body)
+    }
+
+    function renderLoading(msg) {
+      renderMessage([el('span', 'spin'), el('span', null, msg)])
+    }
+
+    function renderNotRunning() {
+      const strong = el('strong', null, "Snag isn't running")
+      const line = el('span', null, 'Start it once and downloads open right here.')
+      const open = el('button', 'btn2 accent2', 'Open Snag')
+      open.type = 'button'
+      open.addEventListener('click', () => { location.href = deepLink(pageUrl); closePanel() })
+      renderMessage([strong, line, open])
+    }
+
+    function renderError(message) {
+      const err = el('span', 'err', message)
+      const retry = el('button', 'btn2', 'Try again')
+      retry.type = 'button'
+      retry.addEventListener('click', start)
+      const app = el('button', 'btn2', 'Open in Snag app')
+      app.type = 'button'
+      app.addEventListener('click', () => { location.href = deepLink(pageUrl); closePanel() })
+      renderMessage([err, retry, app])
+    }
+
+    // ----- the picker itself (header stays, middle collapses on download) -----
+    function renderReady() {
+      root.classList.remove('stage-progress', 'stage-done')
+      root.textContent = ''
+
+      // Header: thumbnail + title + duration/site.
+      const head = el('div', 'head')
+      const thumb = el('span', 'thumb')
+      if (state.info.thumbnail) {
+        const img = document.createElement('img')
+        img.alt = ''
+        img.referrerPolicy = 'no-referrer'
+        img.addEventListener('error', () => img.remove())
+        img.src = state.info.thumbnail
+        thumb.appendChild(img)
+      }
+      const txt = el('div', 'head-txt')
+      txt.appendChild(el('div', 't', state.info.title))
+      const meta = []
+      if (state.info.durationString) meta.push(state.info.durationString)
+      else if (state.info.isLive) meta.push('Live')
+      meta.push(hostLabel())
+      txt.appendChild(el('div', 'm', meta.join(' · ')))
+      const x = el('button', 'x', '✕')
+      x.type = 'button'
+      x.title = 'Close'
+      x.setAttribute('aria-label', 'Close download options')
+      x.addEventListener('click', () => closePanel())
+      head.append(thumb, txt, x)
+
+      // Middle: Video/Audio toggle + the active view. Collapses while downloading.
+      const mid = el('div', 'mid')
+      const seg = el('div', 'seg')
+      const segInd = el('span', 'seg-ind')
+      const vTab = el('button', 'on', 'Video')
+      vTab.type = 'button'
+      const aTab = el('button', null, 'Audio')
+      aTab.type = 'button'
+      seg.append(segInd, vTab, aTab)
+      const videoView = el('div', null)
+      const audioView = el('div', 'audio-view')
+      audioView.style.display = 'none'
+      mid.append(seg, videoView, audioView)
+
+      // Footer: download button, swapped for progress / done in place.
+      const foot = el('div', 'foot')
+      const go = el('button', 'go')
+      go.type = 'button'
+      go.append(el('span', 'gl', 'Download'))
+      const goSub = el('span', 'gs num')
+      go.append(goSub)
+      const prog = el('div', 'prog')
+      const pt = el('div', 'pt')
+      const progLabel = el('strong', null, 'Downloading')
+      const progPct = el('span', 'num', '0%')
+      pt.append(progLabel, progPct)
+      const track = el('div', 'track')
+      const fill = el('div', 'fill')
+      track.appendChild(fill)
+      const pm = el('div', 'pm')
+      const progSpeed = el('span', 'num')
+      const progEta = el('span', 'num')
+      pm.append(progSpeed, progEta)
+      const cancelBtn = el('button', 'cancel', 'Cancel')
+      cancelBtn.type = 'button'
+      prog.append(pt, track, pm, cancelBtn)
+      const done = el('div', 'done')
+      done.append(el('span', 'ok', '✓'), document.createTextNode(' Saved to your folder'))
+      foot.append(go, prog, done)
+
+      root.append(head, mid, foot)
+
+      // ---- resolution + container data for this video ----
+      const heights = buildHeights()
+      const rowsByHeight = new Map()
+      for (const h of heights) rowsByHeight.set(h, rowsForQuality(state.info, selectedGroups(), h))
+
+      if (!heights.includes(state.quality)) state.quality = heights[0] || 0
+      ensureContainer()
+
+      function ensureContainer() {
+        const rows = rowsByHeight.get(state.quality) || []
+        if (!rows.some((r) => r.container === state.container)) {
+          const rec = recommendedRow(rows, selectedGroups().length >= 2, state.defaults?.preferredContainer || 'mp4')
+          state.container = rec ? rec.container : (rows[0] && rows[0].container) || null
+        }
       }
 
-      if (state.kind === 'video') {
-        nodes.push(pillSection(false))
+      function sizeText(height, container) {
+        const rows = rowsByHeight.get(height) || []
+        const row = rows.find((r) => r.container === container) || rows[0]
+        return row ? formatBytes(row.total) : '—'
+      }
 
-        const measuredHeights = [...new Set((info.videoFormats || []).map((f) => f.height || 0).filter(Boolean))]
-        const heights = (measuredHeights.length ? measuredHeights : (info.videoFormats || []).length ? [0] : [])
-          .sort((a, b) => b - a)
-          .filter((height) => rowsForQuality(info, selectedGroups(), height).length > 0)
-        if (!heights.includes(state.quality)) state.quality = heights[0] || 0
-        state.rows = rowsForQuality(info, selectedGroups(), state.quality)
-        const currentRecommended = recommendedRow(state.rows, selectedGroups().length >= 2, state.defaults?.preferredContainer || 'mp4')
-        if (!state.rows.some((r) => r.container === state.container)) state.container = currentRecommended?.container || null
+      function updateGo() {
+        if (state.kind === 'video') {
+          const rows = rowsByHeight.get(state.quality) || []
+          go.disabled = state.busy || !rows.some((r) => r.container === state.container)
+          goSub.textContent =
+            qualityLabel(state.quality) + ' · ' + (state.container || '').toUpperCase() +
+            ' · ' + sizeText(state.quality, state.container)
+        } else {
+          go.disabled = state.busy || !state.groups.length
+          const label = state.audioFmt === 'best' ? 'Original' : state.audioFmt.toUpperCase()
+          const grp = state.groups.find((g) => (g.language || '') === state.audioLang)
+          const lang = state.groups.length >= 2 && grp ? ' · ' + langLabel(grp.language) : ''
+          goSub.textContent = label + lang
+        }
+      }
 
-        const qualityStack = el('div', 'quality-stack')
-        const primaryHeights = heights.slice(0, 3)
-        const visibleHeights = state.moreQualities
-          ? heights
-          : state.quality && !primaryHeights.includes(state.quality)
-            ? [...primaryHeights, state.quality]
-            : primaryHeights
-        for (const height of visibleHeights) {
-          const rows = rowsForQuality(info, selectedGroups(), height)
-          const recommended = recommendedRow(rows, selectedGroups().length >= 2, state.defaults?.preferredContainer || 'mp4')
-          const smallest = meaningfulSmallest(rows)
-          const card = el('div', 'quality-card' + (height === state.quality ? ' on' : ''))
-          const head = el('div', 'quality-card-head')
-          head.append(el('strong', null, qualityLabel(height)), el('small', null, rows[0]?.video?.qualityLabel || ''))
-          const typeGrid = el('div', 'choice-grid')
-          for (const r of rows) {
-            const active = height === state.quality && r.container === state.container
-            const row = el('button', 'choice' + (active ? ' on' : ''))
-            const main = el('div', 'choice-main')
-            main.append(
-              el('strong', null, (r.approx ? '~' : '') + formatBytes(r.total)),
-              el('span', null, r.container.toUpperCase())
-            )
-            row.append(main)
-            if (r === recommended) row.append(el('small', 'rec', selectedGroups().length >= 2 ? 'Recommended' : 'Most compatible'))
-            else if (r === smallest) row.append(el('small', 'rec', 'Smallest'))
-            row.addEventListener('click', () => {
-              state.quality = height
-              state.container = r.container
-              state.rows = rows
-              renderPicker()
+      // ---- video tab: quality rows with one travelling set of format chips ----
+      function buildVideoView() {
+        videoView.textContent = ''
+        const list = el('div', 'list')
+        videoView.appendChild(list)
+        const rowEls = []
+        const sizeEls = []
+
+        const chips = el('span', 'fchips no-trans')
+        const ind = el('span', 'fchip-ind')
+        chips.appendChild(ind)
+        let chipEls = {}
+
+        const moveInd = () => {
+          const c = chipEls[state.container]
+          if (!c) { ind.style.width = '0'; return }
+          ind.style.left = c.offsetLeft + 'px'
+          ind.style.width = c.offsetWidth + 'px'
+        }
+
+        function buildChips(containers) {
+          for (const btn2 of Object.values(chipEls)) btn2.remove()
+          chipEls = {}
+          for (const c of containers) {
+            const b = el('button', 'fchip' + (c === state.container ? ' on' : ''), c.toUpperCase())
+            b.type = 'button'
+            b.title = sizeText(state.quality, c)
+            b.addEventListener('click', (e) => {
+              e.stopPropagation()
+              if (state.container === c) return
+              state.container = c
+              for (const [k, elc] of Object.entries(chipEls)) elc.classList.toggle('on', k === c)
+              moveInd()
+              for (const s of sizeEls) s.el.textContent = sizeText(s.height, c)
+              updateGo()
             })
-            typeGrid.appendChild(row)
+            chipEls[c] = b
+            chips.appendChild(b)
           }
-          card.append(head, typeGrid)
-          qualityStack.appendChild(card)
         }
-        if (!heights.length) qualityStack.appendChild(el('div', 'err', 'No compatible video formats.'))
-        if (heights.length > 3) {
-          const more = el(
-            'button',
-            'more-qualities',
-            state.moreQualities ? 'Hide extra qualities' : `More qualities (${heights.length - 3})`
-          )
-          more.addEventListener('click', () => {
-            state.moreQualities = !state.moreQualities
-            renderPicker()
+
+        const containersFor = (height) => (rowsByHeight.get(height) || []).map((r) => r.container)
+        const placeChips = (height) => {
+          const row = rowEls[heights.indexOf(height)]
+          if (row) row.insertBefore(chips, row.querySelector('.size'))
+        }
+
+        function selectQuality(height) {
+          if (state.quality === height) return
+          const from = chips.getBoundingClientRect()
+          rowEls[heights.indexOf(state.quality)]?.classList.remove('on')
+          state.quality = height
+          ensureContainer()
+          rowEls[heights.indexOf(height)]?.classList.add('on')
+          chips.classList.add('no-trans')
+          buildChips(containersFor(height))
+          placeChips(height)
+          for (const s of sizeEls) s.el.textContent = sizeText(s.height, state.container)
+          const to = chips.getBoundingClientRect()
+          const dx = from.left - to.left
+          const dy = from.top - to.top
+          if (!noMotion && (dx || dy)) {
+            chips.animate(
+              [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }],
+              { duration: 240, easing: 'cubic-bezier(.3,.8,.3,1)' }
+            )
+          }
+          moveInd()
+          requestAnimationFrame(() => chips.classList.remove('no-trans'))
+          updateGo()
+        }
+
+        heights.forEach((height) => {
+          const row = el('div', 'qrow' + (height === state.quality ? ' on' : ''))
+          row.setAttribute('role', 'button')
+          row.tabIndex = 0
+          const strong = el('strong', null, qualityLabel(height))
+          const fps = fpsForHeight(height)
+          if (fps) strong.appendChild(el('em', null, String(fps)))
+          const q = el('span', 'q')
+          q.appendChild(strong)
+          const size = el('span', 'size num', sizeText(height, state.container))
+          row.append(el('span', 'radio'), q, size)
+          row.addEventListener('click', () => selectQuality(height))
+          row.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectQuality(height) }
           })
-          qualityStack.appendChild(more)
-        }
-        nodes.push(qualityStack)
-      } else {
-        nodes.push(pillSection(true))
-        const fmts = el('div', 'pills')
+          rowEls.push(row)
+          sizeEls.push({ el: size, height })
+          list.appendChild(row)
+        })
+
+        if (!heights.length) list.appendChild(el('div', 'err', 'No compatible video formats.'))
+
+        buildChips(containersFor(state.quality))
+        if (heights.length) placeChips(state.quality)
+        requestAnimationFrame(() => {
+          moveInd()
+          requestAnimationFrame(() => chips.classList.remove('no-trans'))
+        })
+      }
+
+      // ---- audio tab: output format, plus language when the video is multi-dub ----
+      function buildAudioView() {
+        audioView.textContent = ''
+        const fgroup = el('div', 'group')
+        fgroup.appendChild(el('div', 'lbl2', 'Format'))
+        const fmts = el('div', 'chips')
         for (const f of ['mp3', 'm4a', 'opus', 'best']) {
-          const p = el('button', 'pill' + (state.audioFmt === f ? ' on' : ''), f === 'best' ? 'Original' : f.toUpperCase())
-          p.addEventListener('click', () => { state.audioFmt = f; renderPicker() })
+          const p = el('button', 'chip' + (state.audioFmt === f ? ' on' : ''), f === 'best' ? 'Original' : f.toUpperCase())
+          p.type = 'button'
+          p.addEventListener('click', () => { state.audioFmt = f; buildAudioView(); updateGo() })
           fmts.appendChild(p)
         }
-        const lw = el('div')
-        lw.append(el('div', 'label', 'Format'))
-        lw.lastChild.style.marginBottom = '7px'
-        lw.appendChild(fmts)
-        nodes.push(lw)
-      }
+        fgroup.appendChild(fmts)
+        audioView.appendChild(fgroup)
 
-      // One compact top action row: type toggle plus the full remaining width
-      // for the current download action.
-      const actionBar = el('div', 'action-bar')
-      const dl = el('button', 'dl')
-      const chosen = state.rows.find((r) => r.container === state.container)
-      let sub = ''
-      if (state.kind === 'video' && chosen) {
-        sub = chosen.video.qualityLabel + ' · ' + chosen.container.toUpperCase()
-        if (chosen.tracks.length >= 2) sub += ' · ' + chosen.tracks.map((t) => langBase(t.language).toUpperCase()).join('+')
-      } else if (state.kind === 'audio') {
-        sub = (state.audioFmt === 'best' ? 'Original' : state.audioFmt.toUpperCase())
-      }
-      dl.append(el('span', null, state.busy ? 'Starting…' : 'Download'), el('small', null, sub))
-      dl.disabled = state.busy || (state.kind === 'video' && !chosen)
-      dl.addEventListener('click', () => void enqueue(chosen))
-      actionBar.append(tabs, dl)
-      nodes.unshift(actionBar)
-
-      renderShell(info.title, nodes)
-    }
-
-    async function enqueue(chosen) {
-      if (state.busy) return
-      state.busy = true
-      renderPicker()
-      const info = state.info
-      let request
-      if (state.kind === 'video' && chosen) {
-        request = {
-          url: info.url, title: info.title, thumbnail: info.thumbnail,
-          kind: 'video',
-          videoFormatId: chosen.video.formatId,
-          audioFormatId: chosen.tracks[0] ? chosen.tracks[0].formatId : undefined,
-          audioFormatIds: chosen.tracks.length >= 2 ? chosen.tracks.map((t) => t.formatId) : undefined,
-          mergeContainer: chosen.container,
-          audioLanguage: chosen.tracks[0] ? chosen.tracks[0].language : null,
-          selectionLabel:
-            chosen.video.qualityLabel + ' · ' + chosen.container.toUpperCase() +
-            (chosen.tracks.length >= 2
-              ? ' · ' + chosen.tracks.map((t) => langBase(t.language).toUpperCase()).join('+') + ' audio'
-              : '')
-        }
-      } else {
-        const group = state.groups.find((g) => (g.language || '') === state.audioLang) || state.groups[0]
-        request = {
-          url: info.url, title: info.title, thumbnail: info.thumbnail,
-          kind: 'audio',
-          audioFormatId: group && group.formats[0] ? group.formats[0].formatId : undefined,
-          audioLanguage: group ? group.language : null,
-          audioOutputFormat: state.audioFmt,
-          selectionLabel: (state.audioFmt === 'best' ? 'Original' : state.audioFmt.toUpperCase())
+        if (state.groups.length >= 2) {
+          const lgroup = el('div', 'group')
+          lgroup.appendChild(el('div', 'lbl2', 'Language'))
+          const langs = el('div', 'chips')
+          for (const g of state.groups) {
+            const key = g.language || ''
+            const p = el('button', 'chip' + (state.audioLang === key ? ' on' : ''), langLabel(g.language) + (g.isDefault ? ' ★' : ''))
+            p.type = 'button'
+            p.addEventListener('click', () => { state.audioLang = key; buildAudioView(); updateGo() })
+            langs.appendChild(p)
+          }
+          lgroup.appendChild(langs)
+          audioView.appendChild(lgroup)
         }
       }
-      const res = await sendMessage({ type: 'snag:enqueue', request })
-      state.busy = false
-      if (res.ok && res.data && res.data.ok && res.data.jobId) {
-        state.jobId = res.data.jobId
-        renderProgress({ status: 'queued', progress: 0, speed: null, eta: null })
-        void pollJob()
+
+      function switchTab(kind) {
+        if (state.kind === kind) return
+        state.kind = kind
+        seg.classList.toggle('audio', kind === 'audio')
+        vTab.classList.toggle('on', kind === 'video')
+        aTab.classList.toggle('on', kind === 'audio')
+        videoView.style.display = kind === 'video' ? '' : 'none'
+        audioView.style.display = kind === 'audio' ? '' : 'none'
+        updateGo()
       }
-      else if (res.error === 'not-running') renderNotRunning()
-      else renderError((res.data && res.data.error) || 'Could not add the download.')
+      vTab.addEventListener('click', () => switchTab('video'))
+      aTab.addEventListener('click', () => switchTab('audio'))
+
+      // ---- download → collapse the middle, run progress in the footer ----
+      function collapseMid() {
+        mid.style.overflow = 'hidden'
+        if (noMotion) { mid.style.maxHeight = '0'; mid.style.opacity = '0'; return }
+        mid.style.maxHeight = mid.scrollHeight + 'px'
+        void mid.offsetHeight
+        mid.style.transition = 'max-height .3s ease, opacity .2s ease'
+        mid.style.maxHeight = '0'
+        mid.style.opacity = '0'
+      }
+
+      function renderProgress(job) {
+        const percent = Math.max(0, Math.min(100, Number(job.progress) || 0))
+        progLabel.textContent =
+          job.status === 'queued' ? 'Waiting…' : job.status === 'processing' ? 'Finishing…' : 'Downloading'
+        progPct.textContent = Math.round(percent) + '%'
+        fill.style.width = percent + '%'
+        progSpeed.textContent = job.speed || job.sizeLabel || ''
+        progEta.textContent = job.eta ? 'ETA ' + job.eta : ''
+      }
+
+      function renderDone() {
+        state.jobId = null
+        root.classList.remove('stage-progress')
+        root.classList.add('stage-done')
+        setTimeout(() => closePanel(), 1500)
+      }
+
+      async function pollJob() {
+        if (!state.jobId || !panel || panel.host !== host) return
+        const res = await sendMessage({ type: 'snag:job', jobId: state.jobId })
+        if (!state.jobId || !panel || panel.host !== host) return
+        const job = res.ok && res.data && res.data.job
+        if (!job) {
+          state.jobId = null
+          renderError((res.data && res.data.error) || 'Could not read download progress.')
+          return
+        }
+        if (job.status === 'completed') { renderDone(); return }
+        if (job.status === 'error' || job.status === 'canceled') {
+          state.jobId = null
+          renderError(job.errorMessage || 'The download stopped.')
+          return
+        }
+        renderProgress(job)
+        state.pollTimer = setTimeout(pollJob, 500)
+      }
+
+      // Cancel puts the picker right back — a canceled download usually means
+      // the wrong quality was picked, so choosing again should be one tap away.
+      function cancelDownload() {
+        state.cancelRequested = true
+        const id = state.jobId
+        state.jobId = null
+        if (state.pollTimer) clearTimeout(state.pollTimer)
+        if (id) void sendMessage({ type: 'snag:cancel', jobId: id })
+        state.busy = false
+        renderReady()
+      }
+      cancelBtn.addEventListener('click', cancelDownload)
+
+      async function enqueue() {
+        if (state.busy || state.jobId) return
+        state.cancelRequested = false
+        const info = state.info
+        let request
+        if (state.kind === 'video') {
+          const rows = rowsByHeight.get(state.quality) || []
+          const chosen = rows.find((r) => r.container === state.container)
+          if (!chosen) return
+          request = {
+            url: info.url, title: info.title, thumbnail: info.thumbnail,
+            kind: 'video',
+            videoFormatId: chosen.video.formatId,
+            audioFormatId: chosen.tracks[0] ? chosen.tracks[0].formatId : undefined,
+            audioFormatIds: chosen.tracks.length >= 2 ? chosen.tracks.map((t) => t.formatId) : undefined,
+            mergeContainer: chosen.container,
+            audioLanguage: chosen.tracks[0] ? chosen.tracks[0].language : null,
+            selectionLabel:
+              chosen.video.qualityLabel + ' · ' + chosen.container.toUpperCase() +
+              (chosen.tracks.length >= 2
+                ? ' · ' + chosen.tracks.map((t) => langBase(t.language).toUpperCase()).join('+') + ' audio'
+                : '')
+          }
+        } else {
+          const group = state.groups.find((g) => (g.language || '') === state.audioLang) || state.groups[0]
+          request = {
+            url: info.url, title: info.title, thumbnail: info.thumbnail,
+            kind: 'audio',
+            audioFormatId: group && group.formats[0] ? group.formats[0].formatId : undefined,
+            audioLanguage: group ? group.language : null,
+            audioOutputFormat: state.audioFmt,
+            selectionLabel: state.audioFmt === 'best' ? 'Original' : state.audioFmt.toUpperCase()
+          }
+        }
+
+        state.busy = true
+        updateGo()
+        collapseMid()
+        root.classList.add('stage-progress')
+        renderProgress({ status: 'queued', progress: 0 })
+        progLabel.textContent = 'Starting…'
+
+        const res = await sendMessage({ type: 'snag:enqueue', request })
+        state.busy = false
+        if (!panel || panel.host !== host) return
+        // Canceled while the job was still being created: kill it quietly; the
+        // picker is already back on screen.
+        if (state.cancelRequested) {
+          const lateJobId = res.ok && res.data && res.data.jobId
+          if (lateJobId) void sendMessage({ type: 'snag:cancel', jobId: lateJobId })
+          return
+        }
+        if (res.ok && res.data && res.data.ok && res.data.jobId) {
+          state.jobId = res.data.jobId
+          void pollJob()
+        } else if (res.error === 'not-running') {
+          renderNotRunning()
+        } else {
+          renderError((res.data && res.data.error) || 'Could not add the download.')
+        }
+      }
+
+      go.addEventListener('click', () => void enqueue())
+
+      buildVideoView()
+      buildAudioView()
+      updateGo()
     }
 
     async function start() {
@@ -733,10 +851,9 @@
       state.info = data.info
       state.defaults = defaultsRes.ok ? defaultsRes.data : null
       state.groups = data.info.audioGroups || []
-      state.quality = Math.max(...(data.info.videoFormats || []).map((f) => f.height || 0), 0)
 
-      // Preselect favorites present on the video (ranked). Multi-audio off means
-      // only the first favorite; with no match prefer English, then the default.
+      // Languages that get merged as switchable tracks come from the app's
+      // saved favorites — the panel no longer asks; it just applies them.
       const favs = (state.defaults?.favorites || ['en']).map(langBase)
       const picked = []
       for (const base of favs) {
@@ -751,8 +868,20 @@
       }
       state.selectedLangs = picked
       state.audioLang = picked[0] ?? null
+
+      // Default to the top resolution; pick the container Snag recommends
+      // (MKV when merging 2+ languages, otherwise MP4 / the saved preference).
+      const heights = buildHeights()
+      state.quality = heights[0] || 0
+      const topRows = rowsForQuality(state.info, selectedGroups(), state.quality)
+      const rec = recommendedRow(topRows, selectedGroups().length >= 2, state.defaults?.preferredContainer || 'mp4')
+      state.container = rec ? rec.container : (topRows[0] && topRows[0].container) || null
+
+      const prefAudio = state.defaults?.preferredAudioFormat
+      state.audioFmt = ['mp3', 'm4a', 'opus', 'best'].includes(prefAudio) ? prefAudio : 'mp3'
+
       state.kind = 'video'
-      renderPicker()
+      renderReady()
       requestAnimationFrame(() => root.focus({ preventScroll: true }))
     }
 

@@ -191,6 +191,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     callSnag(`/jobs/${encodeURIComponent(message.jobId || '')}`, { method: 'GET' }, 3000).then(sendResponse)
     return true
   }
+  if (message.type === 'snag:cancel') {
+    callSnag(
+      `/jobs/${encodeURIComponent(message.jobId || '')}/cancel`,
+      { method: 'POST', body: '{}' },
+      3000
+    ).then(sendResponse)
+    return true
+  }
   if (message.type === 'snag:set-audio-favorites') {
     callSnag(
       '/preferences/audio-languages',

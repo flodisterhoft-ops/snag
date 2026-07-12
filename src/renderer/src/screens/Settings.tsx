@@ -15,6 +15,29 @@ const TEMPLATE_PRESETS = [
   { value: '%(upload_date>%Y-%m-%d)s - %(title)s', label: 'Date – Title' }
 ]
 
+// Common audio-dub languages offered as pills. Order here is only the display
+// order; the saved array records the user's own preference order.
+const AUDIO_LANGUAGES: { code: string; label: string }[] = [
+  { code: 'en', label: 'English' },
+  { code: 'es', label: 'Spanish' },
+  { code: 'de', label: 'German' },
+  { code: 'fr', label: 'French' },
+  { code: 'ru', label: 'Russian' },
+  { code: 'pt', label: 'Portuguese' },
+  { code: 'it', label: 'Italian' },
+  { code: 'hi', label: 'Hindi' },
+  { code: 'ja', label: 'Japanese' },
+  { code: 'ko', label: 'Korean' },
+  { code: 'zh', label: 'Chinese' },
+  { code: 'ar', label: 'Arabic' },
+  { code: 'id', label: 'Indonesian' },
+  { code: 'tr', label: 'Turkish' },
+  { code: 'pl', label: 'Polish' },
+  { code: 'nl', label: 'Dutch' }
+]
+
+const baseCode = (code: string): string => code.toLowerCase().split('-')[0]
+
 function previewName(tpl: string): string {
   return (
     tpl
@@ -64,11 +87,8 @@ export function SettingsScreen(): JSX.Element {
   const [form, setForm] = useState<Settings | null>(settings)
   const [updating, setUpdating] = useState(false)
   const [updateOutput, setUpdateOutput] = useState<string | null>(null)
-  // Local editable buffers so in-progress commas/spaces aren't normalized mid-keystroke.
+  // Local editable buffer so in-progress commas/spaces aren't normalized mid-keystroke.
   const [subLangText, setSubLangText] = useState(settings?.subtitles.languages.join(', ') ?? '')
-  const [audioLangText, setAudioLangText] = useState(
-    settings?.multiAudio.languages.join(', ') ?? ''
-  )
 
   const [extPath, setExtPath] = useState<string | null>(null)
   const [extError, setExtError] = useState<string | null>(null)
@@ -89,6 +109,18 @@ export function SettingsScreen(): JSX.Element {
   const set = (patch: Partial<Settings>): void => {
     setForm((f) => (f ? { ...f, ...patch } : f))
     updateSettings(patch)
+  }
+
+  const audioLangs = form.multiAudio.languages
+  const audioBaseSet = new Set(audioLangs.map(baseCode))
+  const knownAudioBases = new Set(AUDIO_LANGUAGES.map((l) => l.code))
+  const extraAudioLangs = audioLangs.filter((l) => !knownAudioBases.has(baseCode(l)))
+  const toggleAudioLang = (code: string): void => {
+    const base = baseCode(code)
+    const next = audioBaseSet.has(base)
+      ? audioLangs.filter((l) => baseCode(l) !== base)
+      : [...audioLangs, code]
+    set({ multiAudio: { ...form.multiAudio, languages: next } })
   }
 
   const isCustomTemplate = !TEMPLATE_PRESETS.some((p) => p.value === form.filenameTemplate)
@@ -339,28 +371,30 @@ export function SettingsScreen(): JSX.Element {
           />
         </Row>
         <Row
-          title="Favorite languages"
-          desc="Shown first in the picker, in this order. Use language codes such as en, de."
+          title="Preferred languages"
+          desc="Downloaded and merged as switchable tracks whenever a video offers them, in this order."
           stacked
         >
-            <input
-              className="text-input mono"
-              value={audioLangText}
-              spellCheck={false}
-              onChange={(e) => setAudioLangText(e.target.value)}
-              onBlur={() =>
-                set({
-                  multiAudio: {
-                    ...form.multiAudio,
-                    languages: audioLangText
-                      .split(',')
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                  }
-                })
-              }
-              placeholder="en, de"
-            />
+          <div className="sub-lang-chips">
+            {AUDIO_LANGUAGES.map((l) => (
+              <button
+                key={l.code}
+                className={`chip chip-sm ${audioBaseSet.has(l.code) ? 'active' : ''}`}
+                onClick={() => toggleAudioLang(l.code)}
+              >
+                {l.label}
+              </button>
+            ))}
+            {extraAudioLangs.map((l) => (
+              <button
+                key={l}
+                className="chip chip-sm active"
+                onClick={() => toggleAudioLang(l)}
+              >
+                {l.toUpperCase()}
+              </button>
+            ))}
+          </div>
         </Row>
       </Section>
 
