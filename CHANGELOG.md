@@ -3,6 +3,12 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.7.1 — 2026-07-11
+
+- Compact Chrome file-type tiles into two lines with size as the primary text.
+- Move the Download action beside the Video/Audio toggle and fill the remaining width.
+- Show only the top three quality sections initially, with lower tiers behind More qualities.
+
 ## 1.7.0 — 2026-07-11
 
 - Detect the Chrome extension through an authenticated heartbeat.

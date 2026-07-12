@@ -202,7 +202,8 @@
     .center { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 26px 12px; color: #a7adb7; text-align: center; }
     .spin { width: 22px; height: 22px; border: 2.5px solid rgba(255,255,255,0.15); border-top-color: #c6f24d; border-radius: 50%; animation: snagSpin 0.8s linear infinite; }
     @keyframes snagSpin { to { transform: rotate(360deg); } }
-    .tabs { display: inline-flex; padding: 3px; background: #0f1116; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; gap: 2px; align-self: flex-start; }
+    .action-bar { display:flex; align-items:stretch; gap:8px; width:100%; }
+    .tabs { display: inline-flex; padding: 3px; background: #0f1116; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; gap: 2px; flex-shrink:0; }
     .tab { padding: 6px 16px; border: 0; border-radius: 7px; background: none; color: #a7adb7; font-size: 12.5px; font-weight: 600; cursor: pointer; }
     .tab.on { background: #20242c; color: #fff; }
     .label { font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: #6f757f; font-weight: 700; }
@@ -230,24 +231,27 @@
     .note { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #a7adb7; }
     .note::before { content: '✦'; color: #c6f24d; }
     .choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
-    .quality-stack { display:flex; flex-direction:column; gap:9px; }
-    .quality-card { width:100%; padding:11px; border-radius:13px; background:#111319; border:1px solid rgba(255,255,255,.10); transition:border-color .18s ease, background .18s ease; }
+    .quality-stack { display:flex; flex-direction:column; gap:7px; }
+    .quality-card { width:100%; padding:8px 9px; border-radius:12px; background:#111319; border:1px solid rgba(255,255,255,.10); transition:border-color .18s ease, background .18s ease; }
     .quality-card.on { border-color:rgba(198,242,77,.55); background:rgba(198,242,77,.045); }
-    .quality-card-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
-    .quality-card-head strong { color:#eef0f3; font-size:14px; }
-    .quality-card-head small { color:#6f757f; font-size:10.5px; }
-    .choice { min-height: 48px; padding: 8px 6px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.14); background: #0f1116; color: #a7adb7; cursor: pointer; font-size: 12px; font-weight: 700; transition: transform .16s ease, background .16s ease, border-color .16s ease; }
+    .quality-card-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+    .quality-card-head strong { color:#eef0f3; font-size:13px; }
+    .quality-card-head small { color:#6f757f; font-size:10px; }
+    .choice { min-height: 42px; padding: 6px 7px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.14); background: #0f1116; color: #a7adb7; cursor: pointer; font-size: 12px; font-weight: 700; transition: transform .16s ease, background .16s ease, border-color .16s ease; }
     .choice:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.28); }
     .choice.on { background: rgba(198,242,77,.14); border-color: #c6f24d; color: #fff; transform: translateY(-1px); }
-    .choice small { display:block; color:#6f757f; font-size:10px; font-weight:600; margin-top:2px; }
+    .choice-main { display:flex; align-items:center; justify-content:center; gap:5px; white-space:nowrap; }
+    .choice-main strong { color:#eef0f3; font-size:13px; font-family:Consolas,monospace; }
+    .choice-main span { padding:1px 4px; border-radius:4px; background:rgba(255,255,255,.08); color:#8d949f; font-size:9px; letter-spacing:.04em; }
+    .choice small { display:block; color:#6f757f; font-size:9px; font-weight:600; margin-top:1px; white-space:nowrap; }
     .choice.on small { color:#aebd8a; }
     .rec { color:#c6f24d !important; }
-    .foot { display: block; }
-    .dl { display: flex; width:100%; min-height:56px; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 13px 16px; border: 0; border-radius: 12px; background: linear-gradient(160deg, #c6f24d, #aee235); color: #17200a; font-weight: 800; font-size: 15px; cursor: pointer; box-shadow: 0 10px 26px -12px rgba(198,242,77,0.7); }
+    .dl { display: flex; flex:1; min-width:0; min-height:40px; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 5px 10px; border: 0; border-radius: 10px; background: linear-gradient(160deg, #c6f24d, #aee235); color: #17200a; font-weight: 800; font-size: 14px; cursor: pointer; box-shadow: 0 10px 26px -12px rgba(198,242,77,0.7); }
     .dl:hover { filter: brightness(1.05); }
     .dl:active { transform: translateY(1px); }
     .dl:disabled { opacity: 0.45; cursor: not-allowed; }
-    .dl small { font-size: 10.5px; font-weight: 700; opacity: 0.75; }
+    .dl small { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size: 9.5px; font-weight: 700; opacity: 0.75; }
+    .more-qualities { width:100%; padding:6px; color:#7f8792; font-size:10.5px; border:1px dashed rgba(255,255,255,.13); border-radius:9px; cursor:pointer; }
     .progress-card { display:flex; flex-direction:column; gap:12px; padding:8px 2px 4px; }
     .progress-top { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
     .progress-top strong { font-size:15px; }
@@ -320,7 +324,7 @@
     const pageUrl = resolveTargetUrl(video)
     const state = {
       info: null, defaults: null, kind: 'video',
-      rows: [], container: null, quality: 0,
+      rows: [], container: null, quality: 0, moreQualities: false,
       groups: [], selectedLangs: [], moreOpen: false,
       audioLang: null, audioFmt: 'mp3',
       busy: false, jobId: null, pollTimer: null
@@ -567,7 +571,6 @@
         t.addEventListener('click', () => { state.kind = k; renderPicker() })
         tabs.appendChild(t)
       }
-      nodes.push(tabs)
 
       if (state.kind === 'video') {
         nodes.push(pillSection(false))
@@ -582,7 +585,13 @@
         if (!state.rows.some((r) => r.container === state.container)) state.container = currentRecommended?.container || null
 
         const qualityStack = el('div', 'quality-stack')
-        for (const height of heights) {
+        const primaryHeights = heights.slice(0, 3)
+        const visibleHeights = state.moreQualities
+          ? heights
+          : state.quality && !primaryHeights.includes(state.quality)
+            ? [...primaryHeights, state.quality]
+            : primaryHeights
+        for (const height of visibleHeights) {
           const rows = rowsForQuality(info, selectedGroups(), height)
           const recommended = recommendedRow(rows, selectedGroups().length >= 2, state.defaults?.preferredContainer || 'mp4')
           const smallest = meaningfulSmallest(rows)
@@ -593,8 +602,12 @@
           for (const r of rows) {
             const active = height === state.quality && r.container === state.container
             const row = el('button', 'choice' + (active ? ' on' : ''))
-            row.append(el('span', null, r.container.toUpperCase()))
-            row.append(el('small', null, (r.approx ? '~' : '') + formatBytes(r.total)))
+            const main = el('div', 'choice-main')
+            main.append(
+              el('strong', null, (r.approx ? '~' : '') + formatBytes(r.total)),
+              el('span', null, r.container.toUpperCase())
+            )
+            row.append(main)
             if (r === recommended) row.append(el('small', 'rec', selectedGroups().length >= 2 ? 'Recommended' : 'Most compatible'))
             else if (r === smallest) row.append(el('small', 'rec', 'Smallest'))
             row.addEventListener('click', () => {
@@ -609,6 +622,18 @@
           qualityStack.appendChild(card)
         }
         if (!heights.length) qualityStack.appendChild(el('div', 'err', 'No compatible video formats.'))
+        if (heights.length > 3) {
+          const more = el(
+            'button',
+            'more-qualities',
+            state.moreQualities ? 'Hide extra qualities' : `More qualities (${heights.length - 3})`
+          )
+          more.addEventListener('click', () => {
+            state.moreQualities = !state.moreQualities
+            renderPicker()
+          })
+          qualityStack.appendChild(more)
+        }
         nodes.push(qualityStack)
       } else {
         nodes.push(pillSection(true))
@@ -625,9 +650,9 @@
         nodes.push(lw)
       }
 
-      // The Chrome picker always uses the Downloads folder from Snag settings;
-      // keep the compact panel focused on the single action.
-      const foot = el('div', 'foot')
+      // One compact top action row: type toggle plus the full remaining width
+      // for the current download action.
+      const actionBar = el('div', 'action-bar')
       const dl = el('button', 'dl')
       const chosen = state.rows.find((r) => r.container === state.container)
       let sub = ''
@@ -640,8 +665,8 @@
       dl.append(el('span', null, state.busy ? 'Starting…' : 'Download'), el('small', null, sub))
       dl.disabled = state.busy || (state.kind === 'video' && !chosen)
       dl.addEventListener('click', () => void enqueue(chosen))
-      foot.append(dl)
-      nodes.push(foot)
+      actionBar.append(tabs, dl)
+      nodes.unshift(actionBar)
 
       renderShell(info.title, nodes)
     }
