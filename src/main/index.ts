@@ -116,8 +116,14 @@ if (!gotLock) {
     if (!coldUrl && queuedOpenUrls.length === 0 && !trayStart) ensureMainWindow()
 
     // Load the quick popup invisibly once startup work settles, so the first
-    // browser handoff appears instantly instead of booting a renderer.
-    setTimeout(() => prewarmQuickWindow(), 1200)
+    // browser handoff appears instantly instead of booting a renderer. Skip it
+    // when the extension hasn't checked in for a week (or ever) — those users
+    // would pay the hidden renderer's RAM without ever getting a handoff.
+    const EXTENSION_RECENCY_MS = 7 * 24 * 60 * 60 * 1000
+    const extensionLastSeen = loadSettings().browserExtensionLastSeen
+    if (extensionLastSeen && Date.now() - extensionLastSeen < EXTENSION_RECENCY_MS) {
+      setTimeout(() => prewarmQuickWindow(), 1200)
+    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) ensureMainWindow()

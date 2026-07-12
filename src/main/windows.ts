@@ -186,6 +186,39 @@ function positionQuickWindow(win: BrowserWindow): void {
   )
 }
 
+// Tradeoff: the warm renderer is a hidden Chromium process (~60–100 MB) that
+// would otherwise live for the app's whole lifetime. Ten minutes keeps
+// back-to-back extension handoffs instant while letting everyone else shed
+// the RAM — the next handoff just cold-starts the window again, since
+// prewarming is only an optimization on top of ensureQuickWindow.
+const QUICK_IDLE_TIMEOUT_MS = 10 * 60 * 1000
+
+let quickIdleTimer: NodeJS.Timeout | null = null
+
+function clearQuickIdleTimer(): void {
+  if (quickIdleTimer) {
+    clearTimeout(quickIdleTimer)
+    quickIdleTimer = null
+  }
+}
+
+// A quit in progress must not race a late destroy, and the timer must never
+// keep the event loop from settling after before-quit.
+app.on('before-quit', clearQuickIdleTimer)
+
+// Drop the warm quick window once it has sat hidden and unused long enough.
+function armQuickIdleTimer(): void {
+  clearQuickIdleTimer()
+  quickIdleTimer = setTimeout(() => {
+    quickIdleTimer = null
+    if (isQuitting || !quickWindow || quickWindow.isDestroyed() || quickWindow.isVisible()) return
+    // destroy() bypasses the hide-instead-of-close interception in 'close',
+    // so re-run the idle probe the same way an ordinary hide would.
+    quickWindow.destroy()
+    windowIdleProbe?.()
+  }, QUICK_IDLE_TIMEOUT_MS)
+}
+
 function createQuickWindow(options: { reveal: boolean }): BrowserWindow {
   const win = new BrowserWindow({
     width: QUICK_WIDTH,
@@ -217,8 +250,15 @@ function createQuickWindow(options: { reveal: boolean }): BrowserWindow {
     windowIdleProbe?.()
   })
   win.on('closed', () => {
-    if (quickWindow === win) quickWindow = null
+    if (quickWindow === win) {
+      quickWindow = null
+      clearQuickIdleTimer()
+    }
   })
+  // Active extension users keep the warm window between downloads; each hide
+  // re-arms the countdown, each show cancels it.
+  win.on('hide', armQuickIdleTimer)
+  win.on('show', clearQuickIdleTimer)
 
   hardenNavigation(win)
   trackRenderer(win)
@@ -228,7 +268,12 @@ function createQuickWindow(options: { reveal: boolean }): BrowserWindow {
 
 // Load the quick renderer invisibly ahead of time (first handoff is instant).
 export function prewarmQuickWindow(): void {
-  if (!quickWindow || quickWindow.isDestroyed()) createQuickWindow({ reveal: false })
+  if (!quickWindow || quickWindow.isDestroyed()) {
+    createQuickWindow({ reveal: false })
+    // The window starts hidden, so 'hide' never fires — start the idle
+    // countdown here in case no handoff ever arrives.
+    armQuickIdleTimer()
+  }
 }
 
 export function ensureQuickWindow(): BrowserWindow {
