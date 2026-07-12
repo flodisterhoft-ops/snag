@@ -7,7 +7,11 @@ import { analyze } from './metadata'
 import { downloadManager } from './downloader'
 import { loadSettings, saveSettings } from './settings'
 import { isHttpUrl } from './protocol'
-import { isChromeExtensionOrigin, normalizeAudioLanguages } from '@shared/browserIntegration'
+import {
+  isChromeExtensionOrigin,
+  isSnagExtensionOrigin,
+  normalizeAudioLanguages
+} from '@shared/browserIntegration'
 import type { DownloadRequest, VideoContainer, AudioOutputFormat } from '@shared/types'
 
 // Loopback API for the Chrome extension's in-page download panel. Bound to
@@ -162,10 +166,11 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
 
   // Existing unpacked installs may live outside Snag's generated extension
-  // folder and therefore have no token in config.js. Only a real Chromium
-  // extension origin can request a token; ordinary websites are rejected.
+  // folder and therefore have no token in config.js. Only Snag's own extension
+  // — pinned by the `key` in its manifest — can request a token; other
+  // extensions and ordinary websites are rejected.
   if (req.method === 'POST' && path === '/pair') {
-    if (!isChromeExtensionOrigin(origin)) {
+    if (!isSnagExtensionOrigin(origin)) {
       sendJson(res, 403, { error: 'extension origin required' }, origin)
       return
     }

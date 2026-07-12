@@ -1,9 +1,12 @@
+import { createHash } from 'crypto'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'
 import {
   isChromeExtensionOrigin,
-  normalizeAudioLanguages
+  isSnagExtensionOrigin,
+  normalizeAudioLanguages,
+  SNAG_EXTENSION_ID
 } from '../src/shared/browserIntegration'
 
 describe('browser integration', () => {
@@ -12,6 +15,25 @@ describe('browser integration', () => {
     expect(isChromeExtensionOrigin('https://example.com')).toBe(false)
     expect(isChromeExtensionOrigin('chrome-extension://not-an-extension-id')).toBe(false)
     expect(isChromeExtensionOrigin(undefined)).toBe(false)
+  })
+
+  it('only pairs with the Snag extension, whose ID the manifest key pins', () => {
+    expect(isSnagExtensionOrigin(`chrome-extension://${SNAG_EXTENSION_ID}`)).toBe(true)
+    expect(isSnagExtensionOrigin('chrome-extension://abcdefghijklmnopabcdefghijklmnop')).toBe(false)
+    expect(isSnagExtensionOrigin(undefined)).toBe(false)
+
+    // Chrome derives an unpacked extension's ID from the manifest `key`:
+    // first 16 bytes of the SHA-256 of the DER public key, hex mapped a–p.
+    const manifest = JSON.parse(
+      readFileSync(join(process.cwd(), 'extension', 'manifest.json'), 'utf8')
+    ) as { key?: string }
+    expect(typeof manifest.key).toBe('string')
+    const derived = createHash('sha256')
+      .update(Buffer.from(manifest.key as string, 'base64'))
+      .digest('hex')
+      .slice(0, 32)
+      .replace(/./g, (c) => 'abcdefghijklmnop'[parseInt(c, 16)])
+    expect(derived).toBe(SNAG_EXTENSION_ID)
   })
 
   it('normalizes, deduplicates, validates, and caps favorite languages', () => {
