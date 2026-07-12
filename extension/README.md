@@ -18,10 +18,9 @@ synced to a Google account.
 Chrome only allows store extensions to install normally, so this one loads in
 developer mode — a one-time, ~30-second setup:
 
-1. Install and launch the **Snag** desktop app first (it registers the
-   `snag://` link type). In Snag, open *Settings → Browser integration → Prepare
-   extension folder*. Snag copies the files to its user-data folder and displays
-   the exact folder path. Repository builds can use this `extension` folder directly.
+1. Install and launch the **Snag** desktop app first. Snag automatically prepares
+   a stable extension folder; its exact path appears under *Settings → Browser
+   integration*. Repository builds can use this `extension` folder directly.
 2. Open `chrome://extensions` in Chrome.
 3. Turn on **Developer mode** (toggle in the top-right corner).
 4. Click **Load unpacked**, navigate to the path shown by Snag, and select the
@@ -33,10 +32,10 @@ window. If Snag is closed and you choose the fallback, Chrome may ask *"Open
 Snag?"* before launching the desktop app.
 
 > **Notes**
-> - Unpacked extensions do not auto-update. When a Snag release changes the
->   companion, first click **Refresh extension folder** in Snag, then open
->   `chrome://extensions` and click **Reload** on "Snag for Chrome". The
->   extension pairs with the running Snag app automatically after reload.
+> - The first **Load unpacked** is required by Chrome. After that, installed Snag
+>   releases refresh the stable folder on startup and the extension reloads
+>   itself when it detects the new app version. Repository-folder development
+>   builds still need a manual reload after source edits.
 > - Chrome may occasionally show a "disable developer mode extensions" notice
 >   at startup. It's dismissible and harmless.
 > - The button is translucent until hovered, is hidden in fullscreen, and sends

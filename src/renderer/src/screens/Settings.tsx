@@ -444,13 +444,13 @@ export function SettingsScreen(): JSX.Element {
         </Row>
         <Row
           title="Chrome extension"
-          desc="Adds a translucent button and an in-video picker; Chrome requires one manual setup"
+          desc="One-time Chrome setup; Snag keeps the extension updated automatically afterward"
           stacked
         >
           <div className="ext-install">
             <button className="btn-outline" onClick={installExtension}>
               <Icon name="download" size={15} />
-              {extPath ? 'Refresh extension folder' : 'Prepare extension folder'}
+              {extPath ? 'Repair extension folder' : 'Prepare extension folder'}
             </button>
             {extError && <span className="ext-error">{extError}</span>}
             {extPath && (
@@ -469,14 +469,13 @@ export function SettingsScreen(): JSX.Element {
                     Turn on <strong>Developer mode</strong> (top-right corner)
                   </li>
                   <li>
-                    First installation: click <strong>Load unpacked</strong> and pick the folder
-                    above. After a Snag update, click <strong>Reload</strong> on its extension card;
-                    it reconnects to Snag automatically
+                    Click <strong>Load unpacked</strong> once and pick the folder above
                   </li>
+                  <li>Future Snag updates refresh and reload the extension automatically</li>
                   <li>
                     Keep Snag running in the tray so the in-video picker opens instantly
                   </li>
-                  <li>Reload any video tabs that were already open</li>
+                  <li>For this first setup only, reload video tabs that were already open</li>
                 </ol>
                 <span className="set-row-desc">
                   The overlay appears on large HTML5 videos. Browser-internal pages, DRM players,

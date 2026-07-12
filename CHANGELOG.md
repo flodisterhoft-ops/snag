@@ -3,6 +3,12 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.6.3 — 2026-07-11
+
+- Prepare the stable Chrome-extension folder automatically on first app launch.
+- Refresh it on every later launch, without a Settings button press.
+- Clarify that Chrome's Load unpacked approval is required only once.
+
 ## 1.6.2 — 2026-07-11
 
 - Show each release's “What’s new” notes in the in-app update dialog.

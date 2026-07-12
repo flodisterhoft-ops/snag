@@ -89,7 +89,7 @@ if (!gotLock) {
     applyLaunchAtLogin(loadSettings().launchAtLogin)
 
     const extensionRefresh = refreshInstalledBrowserExtension()
-    if (extensionRefresh && !extensionRefresh.ok) {
+    if (!extensionRefresh.ok) {
       console.error('[snag] Could not refresh the Chrome extension:', extensionRefresh.error)
     }
 

@@ -67,10 +67,9 @@ export function installBrowserExtension(): ExtensionInstallResult {
   }
 }
 
-// Refresh an already-installed unpacked copy whenever Snag starts. Chrome keeps
-// loading the same stable folder; after an app update the user only needs to
-// press Reload on chrome://extensions to activate changed extension scripts.
-export function refreshInstalledBrowserExtension(): ExtensionInstallResult | null {
-  if (!getInstalledExtensionPath()) return null
+// Prepare the stable folder on first launch and refresh it on every later
+// launch. Chrome needs one user-approved Load unpacked action, but never needs
+// the user to copy/refresh these files again afterward.
+export function refreshInstalledBrowserExtension(): ExtensionInstallResult {
   return installBrowserExtension()
 }
