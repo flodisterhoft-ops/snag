@@ -336,7 +336,7 @@
       quality: 0, container: null,
       groups: [], selectedLangs: [],
       audioLang: null, audioFmt: 'mp3',
-      busy: false, jobId: null, pollTimer: null, cancelRequested: false
+      busy: false, jobId: null, pollTimer: null, cancelRequested: false, wakeTimer: null
     }
 
     // ----- dismissal wiring -----
@@ -364,6 +364,7 @@
       cleanup: () => {
         if (btn.isConnected) btn.style.visibility = 'visible'
         if (state.pollTimer) clearTimeout(state.pollTimer)
+        if (state.wakeTimer) clearTimeout(state.wakeTimer)
         clearTimeout(outsideClickTimer)
         document.removeEventListener('click', onDocClick, true)
         document.removeEventListener('keydown', onKey, true)
@@ -426,13 +427,38 @@
       renderMessage([el('span', 'spin'), el('span', null, msg)])
     }
 
-    function renderNotRunning() {
+    function renderNotRunning(hint) {
       const strong = el('strong', null, "Snag isn't running")
-      const line = el('span', null, 'Start it once and downloads open right here.')
+      const line = el('span', null, hint || 'Start it once and downloads open right here.')
       const open = el('button', 'btn2 accent2', 'Open Snag')
       open.type = 'button'
-      open.addEventListener('click', () => { location.href = deepLink(pageUrl); closePanel() })
+      open.addEventListener('click', () => { location.href = deepLink(pageUrl); waitForSnag() })
       renderMessage([strong, line, open])
+    }
+
+    // The deep link launches the app, but startup takes a few seconds — keep
+    // the panel open and poll until the loopback API answers, then continue
+    // into the normal picker flow.
+    function waitForSnag() {
+      renderLoading('Starting Snag…')
+      const deadline = Date.now() + 30000
+      const check = async () => {
+        if (!panel || panel.host !== host) return
+        const res = await sendMessage({ type: 'snag:ping' })
+        if (!panel || panel.host !== host) return
+        if (res && res.running) {
+          state.wakeTimer = null
+          void start()
+          return
+        }
+        if (Date.now() >= deadline) {
+          state.wakeTimer = null
+          renderNotRunning("Snag didn't start — is it installed?")
+          return
+        }
+        state.wakeTimer = setTimeout(check, 1500)
+      }
+      state.wakeTimer = setTimeout(check, 1500)
     }
 
     function renderError(message) {

@@ -80,7 +80,20 @@ async function pairWithSnag(port) {
 }
 
 // Find the port Snag is listening on (cached once found; re-scanned on failure).
-async function findSnag() {
+// The panel fires several requests at once — share one scan between them
+// instead of probing every port per request.
+let findSnagPromise = null
+
+function findSnag() {
+  if (!findSnagPromise) {
+    findSnagPromise = scanForSnag().finally(() => {
+      findSnagPromise = null
+    })
+  }
+  return findSnagPromise
+}
+
+async function scanForSnag() {
   await loadPairingToken()
   const configuredPorts = Array.isArray(SNAG_CONFIG && SNAG_CONFIG.ports)
     ? SNAG_CONFIG.ports
