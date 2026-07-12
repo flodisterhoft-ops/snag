@@ -7,6 +7,11 @@ inside Snag before an update is installed.
 
 - Make download buttons on large YouTube homepage hover previews analyze the linked video instead of the homepage.
 - Canonicalize YouTube preview links to avoid unnecessary playlist analysis.
+- Keep repeated browser handoffs moving even when the same URL is sent twice.
+- Release the hidden quick-download window after ten idle minutes to reduce background memory use.
+- Validate saved settings without overwriting deliberately empty language selections.
+- Let the Chrome extension start Snag and hand the video to the app without opening duplicate pickers.
+- Restrict local API pairing to Snag's pinned Chrome extension ID. Existing users may need to load Snag's refreshed extension folder once because Chrome treats the pinned identity as a new extension.
 
 ## 1.8.1 — 2026-07-12
 
