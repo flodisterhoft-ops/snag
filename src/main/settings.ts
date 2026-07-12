@@ -1,6 +1,13 @@
 import { app } from 'electron'
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
+import {
+  AUDIO_OUTPUT_FORMATS,
+  BROWSER_HANDOFFS,
+  DOWNLOAD_KINDS,
+  SPEED_LIMIT_UNITS,
+  VIDEO_CONTAINERS
+} from '@shared/types'
 import type { Settings } from '@shared/types'
 
 function defaultSettings(): Settings {
@@ -61,7 +68,7 @@ function pickEnum<T extends string>(value: unknown, allowed: readonly T[], fallb
 function pickLanguages(value: unknown, fallback: string[]): string[] {
   if (!Array.isArray(value)) return fallback
   const langs = value.filter((v): v is string => typeof v === 'string' && v.length > 0)
-  return langs.length > 0 ? langs : fallback
+  return langs
 }
 
 // Rebuild a trustworthy Settings object from whatever the JSON file contained.
@@ -81,7 +88,7 @@ export function sanitizeSettings(raw: unknown): Settings {
     speedLimit: {
       enabled: pickBoolean(speedLimit.enabled, defaults.speedLimit.enabled),
       value: clampNumber(speedLimit.value, 1, 9999, defaults.speedLimit.value),
-      unit: pickEnum(speedLimit.unit, ['K', 'M'] as const, defaults.speedLimit.unit)
+      unit: pickEnum(speedLimit.unit, SPEED_LIMIT_UNITS, defaults.speedLimit.unit)
     },
     concurrentFragments: Math.round(
       clampNumber(raw.concurrentFragments, 1, 16, defaults.concurrentFragments)
@@ -100,20 +107,20 @@ export function sanitizeSettings(raw: unknown): Settings {
     },
     preferredVideoContainer: pickEnum(
       raw.preferredVideoContainer,
-      ['mp4', 'mkv', 'webm'] as const,
+      VIDEO_CONTAINERS,
       defaults.preferredVideoContainer
     ),
     preferredAudioFormat: pickEnum(
       raw.preferredAudioFormat,
-      ['mp3', 'm4a', 'opus', 'wav', 'flac', 'best'] as const,
+      AUDIO_OUTPUT_FORMATS,
       defaults.preferredAudioFormat
     ),
     rememberLastChoices: pickBoolean(raw.rememberLastChoices, defaults.rememberLastChoices),
-    lastKind: pickEnum(raw.lastKind, ['video', 'audio'] as const, defaults.lastKind),
+    lastKind: pickEnum(raw.lastKind, DOWNLOAD_KINDS, defaults.lastKind),
     ytdlpPath: typeof raw.ytdlpPath === 'string' && raw.ytdlpPath.length > 0 ? raw.ytdlpPath : null,
     embedThumbnail: pickBoolean(raw.embedThumbnail, defaults.embedThumbnail),
     embedMetadata: pickBoolean(raw.embedMetadata, defaults.embedMetadata),
-    browserHandoff: pickEnum(raw.browserHandoff, ['quick', 'main'] as const, defaults.browserHandoff),
+    browserHandoff: pickEnum(raw.browserHandoff, BROWSER_HANDOFFS, defaults.browserHandoff),
     browserExtensionPromptDismissed: pickBoolean(
       raw.browserExtensionPromptDismissed,
       defaults.browserExtensionPromptDismissed

@@ -1,8 +1,13 @@
 // Shared IPC contract between main and renderer processes.
 
-export type DownloadKind = 'video' | 'audio'
-export type VideoContainer = 'mp4' | 'mkv' | 'webm'
-export type AudioOutputFormat = 'mp3' | 'm4a' | 'opus' | 'wav' | 'flac' | 'best'
+export const DOWNLOAD_KINDS = ['video', 'audio'] as const
+export type DownloadKind = (typeof DOWNLOAD_KINDS)[number]
+
+export const VIDEO_CONTAINERS = ['mp4', 'mkv', 'webm'] as const
+export type VideoContainer = (typeof VIDEO_CONTAINERS)[number]
+
+export const AUDIO_OUTPUT_FORMATS = ['mp3', 'm4a', 'opus', 'wav', 'flac', 'best'] as const
+export type AudioOutputFormat = (typeof AUDIO_OUTPUT_FORMATS)[number]
 
 export interface VideoFormat {
   formatId: string
@@ -138,14 +143,17 @@ export interface ProgressUpdate {
   errorMessage?: string | null
 }
 
+export const SPEED_LIMIT_UNITS = ['K', 'M'] as const
+
 export interface SpeedLimit {
   enabled: boolean
   value: number
-  unit: 'K' | 'M'
+  unit: (typeof SPEED_LIMIT_UNITS)[number]
 }
 
 // What a browser handoff (snag:// link) opens: the compact quick dialog or the full app.
-export type BrowserHandoff = 'quick' | 'main'
+export const BROWSER_HANDOFFS = ['quick', 'main'] as const
+export type BrowserHandoff = (typeof BROWSER_HANDOFFS)[number]
 
 // Preferred spoken languages: when a video carries several audio tracks
 // (YouTube dubs), every matching language is embedded as a switchable track.
