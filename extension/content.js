@@ -230,6 +230,12 @@
     .note { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #a7adb7; }
     .note::before { content: '✦'; color: #c6f24d; }
     .choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+    .quality-stack { display:flex; flex-direction:column; gap:9px; }
+    .quality-card { width:100%; padding:11px; border-radius:13px; background:#111319; border:1px solid rgba(255,255,255,.10); transition:border-color .18s ease, background .18s ease; }
+    .quality-card.on { border-color:rgba(198,242,77,.55); background:rgba(198,242,77,.045); }
+    .quality-card-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+    .quality-card-head strong { color:#eef0f3; font-size:14px; }
+    .quality-card-head small { color:#6f757f; font-size:10.5px; }
     .choice { min-height: 48px; padding: 8px 6px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.14); background: #0f1116; color: #a7adb7; cursor: pointer; font-size: 12px; font-weight: 700; transition: transform .16s ease, background .16s ease, border-color .16s ease; }
     .choice:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.28); }
     .choice.on { background: rgba(198,242,77,.14); border-color: #c6f24d; color: #fff; transform: translateY(-1px); }
@@ -237,7 +243,7 @@
     .choice.on small { color:#aebd8a; }
     .rec { color:#c6f24d !important; }
     .foot { display: block; }
-    .dl { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 13px 16px; border: 0; border-radius: 12px; background: linear-gradient(160deg, #c6f24d, #aee235); color: #17200a; font-weight: 800; font-size: 15px; cursor: pointer; box-shadow: 0 10px 26px -12px rgba(198,242,77,0.7); }
+    .dl { display: flex; width:100%; min-height:56px; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 13px 16px; border: 0; border-radius: 12px; background: linear-gradient(160deg, #c6f24d, #aee235); color: #17200a; font-weight: 800; font-size: 15px; cursor: pointer; box-shadow: 0 10px 26px -12px rgba(198,242,77,0.7); }
     .dl:hover { filter: brightness(1.05); }
     .dl:active { transform: translateY(1px); }
     .dl:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -571,38 +577,39 @@
           .sort((a, b) => b - a)
           .filter((height) => rowsForQuality(info, selectedGroups(), height).length > 0)
         if (!heights.includes(state.quality)) state.quality = heights[0] || 0
-        const qualityWrap = el('div')
-        qualityWrap.append(el('div', 'label', 'Quality'))
-        qualityWrap.lastChild.style.marginBottom = '7px'
-        const qualityGrid = el('div', 'choice-grid')
-        for (const height of heights) {
-          const q = el('button', 'choice' + (height === state.quality ? ' on' : ''), qualityLabel(height))
-          q.addEventListener('click', () => { state.quality = height; state.container = null; renderPicker() })
-          qualityGrid.appendChild(q)
-        }
-        qualityWrap.appendChild(qualityGrid)
-        nodes.push(qualityWrap)
-
         state.rows = rowsForQuality(info, selectedGroups(), state.quality)
-        const recommended = recommendedRow(state.rows, selectedGroups().length >= 2, state.defaults?.preferredContainer || 'mp4')
-        if (!state.rows.some((r) => r.container === state.container)) state.container = recommended?.container || null
-        const typeWrap = el('div')
-        typeWrap.append(el('div', 'label', 'File type'))
-        typeWrap.lastChild.style.marginBottom = '7px'
-        const typeGrid = el('div', 'choice-grid')
-        const smallest = meaningfulSmallest(state.rows)
-        for (const r of state.rows) {
-          const row = el('button', 'choice' + (r.container === state.container ? ' on' : ''))
-          row.append(el('span', null, r.container.toUpperCase()))
-          row.append(el('small', null, (r.approx ? '~' : '') + formatBytes(r.total)))
-          if (r === recommended) row.append(el('small', 'rec', selectedGroups().length >= 2 ? 'Recommended' : 'Most compatible'))
-          else if (r === smallest) row.append(el('small', 'rec', 'Smallest'))
-          row.addEventListener('click', () => { state.container = r.container; renderPicker() })
-          typeGrid.appendChild(row)
+        const currentRecommended = recommendedRow(state.rows, selectedGroups().length >= 2, state.defaults?.preferredContainer || 'mp4')
+        if (!state.rows.some((r) => r.container === state.container)) state.container = currentRecommended?.container || null
+
+        const qualityStack = el('div', 'quality-stack')
+        for (const height of heights) {
+          const rows = rowsForQuality(info, selectedGroups(), height)
+          const recommended = recommendedRow(rows, selectedGroups().length >= 2, state.defaults?.preferredContainer || 'mp4')
+          const smallest = meaningfulSmallest(rows)
+          const card = el('div', 'quality-card' + (height === state.quality ? ' on' : ''))
+          const head = el('div', 'quality-card-head')
+          head.append(el('strong', null, qualityLabel(height)), el('small', null, rows[0]?.video?.qualityLabel || ''))
+          const typeGrid = el('div', 'choice-grid')
+          for (const r of rows) {
+            const active = height === state.quality && r.container === state.container
+            const row = el('button', 'choice' + (active ? ' on' : ''))
+            row.append(el('span', null, r.container.toUpperCase()))
+            row.append(el('small', null, (r.approx ? '~' : '') + formatBytes(r.total)))
+            if (r === recommended) row.append(el('small', 'rec', selectedGroups().length >= 2 ? 'Recommended' : 'Most compatible'))
+            else if (r === smallest) row.append(el('small', 'rec', 'Smallest'))
+            row.addEventListener('click', () => {
+              state.quality = height
+              state.container = r.container
+              state.rows = rows
+              renderPicker()
+            })
+            typeGrid.appendChild(row)
+          }
+          card.append(head, typeGrid)
+          qualityStack.appendChild(card)
         }
-        if (!state.rows.length) typeGrid.appendChild(el('div', 'err', 'No compatible file types.'))
-        typeWrap.appendChild(typeGrid)
-        nodes.push(typeWrap)
+        if (!heights.length) qualityStack.appendChild(el('div', 'err', 'No compatible video formats.'))
+        nodes.push(qualityStack)
       } else {
         nodes.push(pillSection(true))
         const fmts = el('div', 'pills')

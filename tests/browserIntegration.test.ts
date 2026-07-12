@@ -35,6 +35,8 @@ describe('browser integration', () => {
     expect(content).toContain("setAttribute('role', 'dialog')")
     expect(content).toContain('prefers-reduced-motion')
     expect(content).toContain("el('div', 'progress-track')")
+    expect(content).toContain("el('div', 'quality-stack')")
+    expect(content).toContain('width:100%; min-height:56px')
     expect(content).not.toContain("'Added to Snag'")
     expect(content).not.toContain("el('div', 'save')")
   })

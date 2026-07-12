@@ -293,7 +293,6 @@ export function FormatPicker({
     return rows
   }, [info, selectedGroups, activeHeight])
 
-  const smallestBestKey = meaningfullySmallestContainer(bestRows)
   const recommendedBestKey = recommendedContainer(
     bestRows,
     selectedGroups.length >= 2,
@@ -304,13 +303,14 @@ export function FormatPicker({
   // smallest file that still has the highest quality.
   useEffect(() => {
     if (kind !== 'video' || !bestMode) return
+    if (bestRows.some((row) => row.container === container && row.video.formatId === videoId)) return
     const preferred = bestRows.find((row) => row.container === recommendedBestKey) ?? bestRows[0]
     if (preferred) {
       setContainer(preferred.container)
       setVideoId(preferred.video.formatId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [info.id, bestMode, kind, activeHeight, recommendedBestKey])
+  }, [info.id, bestMode, kind, activeHeight, recommendedBestKey, container, videoId, bestRows])
 
   const selectBestRow = (row: BestRow): void => {
     setContainer(row.container)
@@ -499,67 +499,57 @@ export function FormatPicker({
 
           {bestMode ? (
             bestRows.length > 0 ? (
-              <>
-                <div className="control-label">Quality</div>
-                <div className="quality-pill-grid" role="radiogroup" aria-label="Video quality">
-                  {qualityHeights.map((height) => (
-                    <button
-                      key={height}
-                      role="radio"
-                      aria-checked={height === activeHeight}
-                      className={`chip chip-sm ${height === activeHeight ? 'active' : ''}`}
-                      onClick={() => setSelectedHeight(height)}
-                    >
-                      {qualityTierLabel(height)}
-                    </button>
-                  ))}
-                </div>
-                <div className="control-label">File type</div>
-                <div className="best-list" role="radiogroup" aria-label="File type">
-                {bestRows.map((row) => {
-                  const active = row.container === container
+              <div className="quality-option-stack" role="radiogroup" aria-label="Quality and file type">
+                {qualityHeights.map((height) => {
+                  const rows = CONTAINERS.map((candidate) =>
+                    bestRowFor(candidate, info, selectedGroups, height)
+                  ).filter((row): row is BestRow => !!row)
+                  const recommended = recommendedContainer(
+                    rows,
+                    selectedGroups.length >= 2,
+                    settings.preferredVideoContainer
+                  )
+                  const smallest = meaningfullySmallestContainer(rows)
+                  const qualityActive = height === activeHeight
                   return (
-                    <button
-                      key={row.container}
-                      role="radio"
-                      aria-checked={active}
-                      className={`best-row ${active ? 'selected' : ''}`}
-                      title={exactResolution(row.video)}
-                      onClick={() => selectBestRow(row)}
+                    <section
+                      key={height}
+                      className={`quality-option-card ${qualityActive ? 'selected' : ''}`}
                     >
-                      <span className="ft-radio" />
-                      <span className="best-container">{row.container.toUpperCase()}</span>
-                      <span className="best-detail">
-                        <span className="best-quality">
-                          {row.video.qualityLabel}
-                          {resolutionTier(row.video) && (
-                            <span className="tag tag-4k">{resolutionTier(row.video)}</span>
-                          )}
-                          {row.video.dynamicRange && row.video.dynamicRange !== 'SDR' && (
-                            <span className="tag tag-hdr">{row.video.dynamicRange}</span>
-                          )}
-                        </span>
-                        <span className="best-codec">
-                          {row.video.vcodec || '—'}
-                          {row.audioTracks.length >= 2 && ` · ${row.audioTracks.length} audio tracks`}
-                        </span>
-                      </span>
-                      <span className="best-size">
-                        <strong>{formatBytes(row.totalSize, row.sizeIsApprox)}</strong>
-                        {row.container === smallestBestKey && bestRows.length > 1 && (
-                          <span className="tag tag-smallest">smallest</span>
-                        )}
-                        {row.container === recommendedBestKey && (
-                          <span className="tag tag-recommended">
-                            {selectedGroups.length >= 2 ? 'recommended' : 'most compatible'}
-                          </span>
-                        )}
-                      </span>
-                    </button>
+                      <div className="quality-option-head">
+                        <strong>{qualityTierLabel(height)}</strong>
+                        <span>{rows[0]?.video.qualityLabel}</span>
+                      </div>
+                      <div className="quality-container-grid">
+                        {rows.map((row) => {
+                          const active = qualityActive && row.container === container
+                          return (
+                            <button
+                              key={row.container}
+                              role="radio"
+                              aria-checked={active}
+                              className={`quality-container ${active ? 'selected' : ''}`}
+                              title={exactResolution(row.video)}
+                              onClick={() => {
+                                setSelectedHeight(height)
+                                selectBestRow(row)
+                              }}
+                            >
+                              <strong>{row.container.toUpperCase()}</strong>
+                              <span>{formatBytes(row.totalSize, row.sizeIsApprox)}</span>
+                              {row.container === recommended ? (
+                                <small>{selectedGroups.length >= 2 ? 'Recommended' : 'Most compatible'}</small>
+                              ) : row.container === smallest ? (
+                                <small>Smallest</small>
+                              ) : null}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </section>
                   )
                 })}
-                </div>
-              </>
+              </div>
             ) : (
               <div className="empty-note">No downloadable video streams found for this link.</div>
             )
