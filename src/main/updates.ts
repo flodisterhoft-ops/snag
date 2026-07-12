@@ -15,6 +15,7 @@ const AUTO_CHECK_INTERVAL_MS = 20 * 60 * 60 * 1000
 interface ReleaseInfo {
   version: string
   url: string
+  notes: string | null
 }
 
 export type ReleaseLookup =
@@ -30,7 +31,7 @@ export async function latestRelease(repo: string): Promise<ReleaseLookup> {
     if (!res.ok) {
       return { ok: false, error: `GitHub returned HTTP ${res.status} for ${repo}.` }
     }
-    const data = (await res.json()) as { tag_name?: string; html_url?: string }
+    const data = (await res.json()) as { tag_name?: string; html_url?: string; body?: string }
     if (!data.tag_name) {
       return { ok: false, error: `GitHub returned an invalid release response for ${repo}.` }
     }
@@ -38,7 +39,8 @@ export async function latestRelease(repo: string): Promise<ReleaseLookup> {
       ok: true,
       release: {
         version: data.tag_name.replace(/^v/i, ''),
-        url: data.html_url ?? `https://github.com/${repo}/releases/latest`
+        url: data.html_url ?? `https://github.com/${repo}/releases/latest`,
+        notes: typeof data.body === 'string' && data.body.trim() ? data.body.trim().slice(0, 5000) : null
       }
     }
   } catch (err) {
@@ -79,7 +81,7 @@ export async function checkForUpdates(): Promise<UpdateAvailability> {
   const ytdlpRelease = ytdlpLookup.ok ? ytdlpLookup.release : null
   const tools = toolsResult.ok ? toolsResult.tools : null
   if (appRelease && compareVersions(appRelease.version, current) > 0) {
-    result.app = { current, latest: appRelease.version, url: appRelease.url }
+    result.app = { current, latest: appRelease.version, url: appRelease.url, notes: appRelease.notes }
   }
   if (ytdlpRelease && tools?.ytdlpVersion && compareVersions(ytdlpRelease.version, tools.ytdlpVersion) > 0) {
     result.ytdlp = { current: tools.ytdlpVersion, latest: ytdlpRelease.version }

@@ -151,6 +151,12 @@ export function UpdateModal(): JSX.Element | null {
             </div>
           )}
           {appPhase === 'error' && appError && <div className="update-error">{appError}</div>}
+          {updates.app.notes && (
+            <div className="update-changelog">
+              <strong>What’s new</strong>
+              <div>{updates.app.notes}</div>
+            </div>
+          )}
         </div>
       )}
 

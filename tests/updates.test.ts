@@ -17,7 +17,11 @@ import { checkForUpdates } from '../src/main/updates'
 
 function release(version: string): Response {
   return new Response(
-    JSON.stringify({ tag_name: `v${version}`, html_url: `https://example.com/${version}` }),
+    JSON.stringify({
+      tag_name: `v${version}`,
+      html_url: `https://example.com/${version}`,
+      body: `Changes in ${version}`
+    }),
     { status: 200, headers: { 'content-type': 'application/json' } }
   )
 }
@@ -96,6 +100,7 @@ describe('checkForUpdates', () => {
     const result = await checkForUpdates()
     expect(result.status).toBe('partial')
     expect(result.app?.latest).toBe('1.3.0')
+    expect(result.app?.notes).toBe('Changes in 1.3.0')
     expect(result.ytdlp).toBeNull()
     expect(mocks.saveSettings).not.toHaveBeenCalled()
   })

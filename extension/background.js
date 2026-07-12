@@ -10,6 +10,7 @@ const MENU_PAGE = 'snag-page'
 const MENU_LINK = 'snag-link'
 const MENU_VIDEO = 'snag-video'
 const MENU_TOGGLE = 'snag-toggle-site'
+const VERSION_ALARM = 'snag-check-app-version'
 
 function deepLink(url) {
   return 'snag://download?url=' + encodeURIComponent(url)
@@ -130,6 +131,33 @@ async function callSnag(path, options, timeoutMs) {
     return { ok: false, error: 'not-running' }
   }
 }
+
+// Snag refreshes its stable unpacked-extension folder whenever the desktop app
+// starts. After one manual reload installs this code, future app upgrades are
+// detected here and Chrome reloads the extension from that refreshed folder.
+async function reloadForNewAppVersion() {
+  const port = await findSnag()
+  if (port == null) return
+  try {
+    const res = await apiFetch(port, '/ping', { method: 'GET' }, 1200)
+    if (!res.ok) return
+    const data = await res.json()
+    if (!data || data.app !== 'snag' || typeof data.version !== 'string') return
+    const stored = await chrome.storage.local.get('snagObservedAppVersion')
+    const previous = stored.snagObservedAppVersion
+    await chrome.storage.local.set({ snagObservedAppVersion: data.version })
+    if (typeof previous === 'string' && previous !== data.version) chrome.runtime.reload()
+  } catch {
+    /* Snag may be starting or shutting down; the next alarm retries. */
+  }
+}
+
+chrome.alarms.create(VERSION_ALARM, { periodInMinutes: 1 })
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === VERSION_ALARM) void reloadForNewAppVersion()
+})
+chrome.runtime.onStartup.addListener(() => void reloadForNewAppVersion())
+void reloadForNewAppVersion()
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || typeof message.type !== 'string') return false

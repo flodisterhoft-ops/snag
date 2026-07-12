@@ -7,6 +7,7 @@ describe('Windows packaging', () => {
     const tray = readFileSync('src/main/tray.ts', 'utf8')
 
     expect(builder).toContain('- resources/tray.png')
+    expect(builder).toContain('- CHANGELOG.md')
     expect(tray).toContain("import trayIconPath from '../../resources/tray.png?asset'")
     expect(tray).toContain("import appIconPath from '../../build/icon.ico?asset'")
     expect(tray).toContain('bundledTrayIcon.isEmpty()')

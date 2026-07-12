@@ -197,7 +197,7 @@ export interface AppUpdateProgress {
 // "success"; partial/error preserve the distinction between current and unknown.
 export interface UpdateAvailability {
   status: UpdateCheckStatus
-  app: { current: string; latest: string; url: string } | null
+  app: { current: string; latest: string; url: string; notes: string | null } | null
   ytdlp: { current: string; latest: string } | null
   error: string | null
 }

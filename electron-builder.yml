@@ -10,6 +10,7 @@ files:
   - resources/tray.png
   - package.json
   - LICENSE
+  - CHANGELOG.md
 extraResources:
   - from: build/tools
     to: tools
