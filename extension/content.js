@@ -14,6 +14,9 @@
 
   let disabled = false
   const buttons = new Map() // <video> element -> its button element
+  const analysisByUrl = new Map()
+  let prefetchTimer = null
+  let prefetchUrl = null
 
   const LANG_NAMES = {
     en: 'English', de: 'German', es: 'Spanish', fr: 'French', it: 'Italian',
@@ -54,6 +57,23 @@
   // The page URL is not always the video's URL. On X/Twitter the feed itself
   // is not extractable — resolve the enclosing tweet's permalink instead.
   function resolveTargetUrl(video) {
+    if (/(^|\.)youtube\.com$/i.test(HOST)) {
+      // Homepage hover previews are portaled into a global ytd-video-preview,
+      // outside the thumbnail card. YouTube keeps the real watch link inside
+      // that preview even though the <video> itself has no useful ancestor URL.
+      const preview = video && video.closest && video.closest('ytd-video-preview')
+      const previewLink = preview && preview.querySelector('a[href*="/watch?v="], a[href*="/shorts/"]')
+      const candidate = previewLink ? previewLink.href : location.href
+      try {
+        const parsed = new URL(candidate, location.origin)
+        const videoId = parsed.searchParams.get('v')
+        if (videoId) return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`
+        const short = parsed.pathname.match(/^\/shorts\/([\w-]+)/)
+        if (short) return `https://www.youtube.com/shorts/${short[1]}`
+      } catch {
+        // Fall through to the normal page URL.
+      }
+    }
     if (/(^|\.)(x\.com|twitter\.com)$/i.test(HOST)) {
       const statusRe = /\/([A-Za-z0-9_]+)\/status\/(\d+)/
       const article = video && video.closest && video.closest('article')
@@ -80,6 +100,34 @@
         resolve({ ok: false, error: 'extension' })
       }
     })
+  }
+
+  function requestAnalysis(url) {
+    let request = analysisByUrl.get(url)
+    if (!request) {
+      request = sendMessage({ type: 'snag:analyze', url }).then((result) => {
+        if (!result || result.error === 'not-running' || result.error === 'not-paired' || result.error === 'extension') {
+          analysisByUrl.delete(url)
+        }
+        return result
+      })
+      analysisByUrl.set(url, request)
+      while (analysisByUrl.size > 8) analysisByUrl.delete(analysisByUrl.keys().next().value)
+    }
+    return request
+  }
+
+  function prefetchAnalysis(video) {
+    const url = resolveTargetUrl(video)
+    if (analysisByUrl.has(url)) return
+    if (prefetchTimer && prefetchUrl === url) return
+    clearTimeout(prefetchTimer)
+    prefetchUrl = url
+    prefetchTimer = setTimeout(() => {
+      prefetchTimer = null
+      prefetchUrl = null
+      void requestAnalysis(url)
+    }, 700)
   }
 
   // ---------- Container compatibility (friendly codec names from Snag) ----------
@@ -836,7 +884,7 @@
       renderLoading('Reading video…')
       const [defaultsRes, analyzeRes] = await Promise.all([
         sendMessage({ type: 'snag:defaults' }),
-        sendMessage({ type: 'snag:analyze', url: pageUrl })
+        requestAnalysis(pageUrl)
       ])
       if (!panel || panel.host !== host) return
       if (analyzeRes.error === 'not-running' || analyzeRes.error === 'not-paired' || analyzeRes.error === 'extension') {
@@ -970,6 +1018,7 @@
         }
         btn.style.display = 'block'
         position(video, btn)
+        prefetchAnalysis(video)
       } else if (btn) {
         btn.style.display = 'none'
       }

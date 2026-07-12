@@ -19,6 +19,7 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
   const isActive = status === 'downloading' || status === 'processing'
   const pct = Math.round(job.progress)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [sharing, setSharing] = useState(false)
 
   const openDownloadedPath = async (showInFolder: boolean): Promise<void> => {
     if (!job.filepath) return
@@ -34,9 +35,17 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
   }
 
   const shareDownloadedFile = async (): Promise<void> => {
+    if (sharing) return
     setActionError(null)
-    const error = await window.api.shareFile(job.id)
-    if (error) setActionError(error)
+    setSharing(true)
+    try {
+      const error = await window.api.shareFile(job.id)
+      if (error) setActionError(error)
+    } catch (err) {
+      setActionError((err as Error).message || 'Telegram could not open this file.')
+    } finally {
+      setTimeout(() => setSharing(false), 2000)
+    }
   }
 
   const deleteDownloadedFile = async (): Promise<void> => {
@@ -117,7 +126,8 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
           <>
             <button
               className="icon-btn"
-              title="Share file (Telegram, WhatsApp, and other Windows apps)"
+              title="Share in Telegram"
+              disabled={sharing}
               onClick={() => void shareDownloadedFile()}
             >
               <Icon name="share" size={16} />

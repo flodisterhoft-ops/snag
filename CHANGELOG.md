@@ -3,6 +3,17 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.8.2 — 2026-07-12
+
+- Make download buttons on large YouTube homepage hover previews analyze the linked video instead of the homepage.
+- Canonicalize YouTube preview links to avoid unnecessary playlist analysis.
+
+## 1.8.1 — 2026-07-12
+
+- Open MKV downloads as playable Telegram media without re-encoding or changing the original file.
+- Prevent rapid duplicate Telegram share requests.
+- Prefetch YouTube format details when the in-video button appears so the quality picker opens much faster when clicked.
+
 ## 1.8.0 — 2026-07-12
 
 - Redesign the Chrome quality picker into a compact single-decision panel: a quality list with inline MP4/MKV/WEBM chips, a sliding Video/Audio toggle, and a Download button that collapses into in-place progress.
