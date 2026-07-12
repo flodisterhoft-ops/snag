@@ -131,6 +131,33 @@ async function scanForSnag() {
   return null
 }
 
+// Liveness-only probe used while a deep link is starting Snag. Unlike
+// findSnag(), this never calls /pair and therefore cannot multiply pairing
+// attempts while the app is still booting.
+async function findRunningSnag() {
+  const configuredPorts = Array.isArray(SNAG_CONFIG && SNAG_CONFIG.ports)
+    ? SNAG_CONFIG.ports
+    : []
+  const ports = [...new Set([...configuredPorts, ...DEFAULT_PORTS])]
+  const candidates = workingPort
+    ? [workingPort, ...ports.filter((p) => p !== workingPort)]
+    : ports
+  for (const port of candidates) {
+    try {
+      const res = await apiFetch(port, '/health', { method: 'GET' }, 500)
+      if (!res.ok) continue
+      const data = await res.json()
+      if (data && data.app === 'snag') {
+        workingPort = port
+        return port
+      }
+    } catch {
+      /* try next port */
+    }
+  }
+  return null
+}
+
 async function callSnag(path, options, timeoutMs) {
   const port = await findSnag()
   if (port == null) return { ok: false, error: 'not-running' }
@@ -177,7 +204,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || typeof message.type !== 'string') return false
 
   if (message.type === 'snag:ping') {
-    findSnag().then((port) => sendResponse({ running: port != null }))
+    findRunningSnag().then((port) => sendResponse({ running: port != null }))
     return true
   }
   if (message.type === 'snag:defaults') {

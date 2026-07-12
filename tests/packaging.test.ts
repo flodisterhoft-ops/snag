@@ -24,6 +24,9 @@ describe('Windows packaging', () => {
     expect(content).toContain('requestAnalysis(pageUrl)')
     expect(content).toContain("video.closest('ytd-video-preview')")
     expect(content).toContain('https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}')
+    expect(content).toContain("el('strong', null, 'Opened in Snag')")
+    expect(content).not.toContain('void start()\n          return')
+    expect(readFileSync('extension/background.js', 'utf8')).toContain("apiFetch(port, '/health'")
   })
 
   it('opens Telegram with the file and retains the Windows Share fallback', () => {

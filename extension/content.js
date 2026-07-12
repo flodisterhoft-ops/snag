@@ -484,9 +484,9 @@
       renderMessage([strong, line, open])
     }
 
-    // The deep link launches the app, but startup takes a few seconds — keep
-    // the panel open and poll until the loopback API answers, then continue
-    // into the normal picker flow.
+    // The deep link already hands this URL to Snag's own picker. Keep this
+    // panel open only long enough to confirm startup, then get out of the way
+    // so the same video cannot be enqueued from two simultaneous pickers.
     function waitForSnag() {
       renderLoading('Starting Snag…')
       const deadline = Date.now() + 30000
@@ -495,8 +495,11 @@
         const res = await sendMessage({ type: 'snag:ping' })
         if (!panel || panel.host !== host) return
         if (res && res.running) {
-          state.wakeTimer = null
-          void start()
+          renderMessage([
+            el('strong', null, 'Opened in Snag'),
+            el('span', null, 'Continue in the Snag window.')
+          ])
+          state.wakeTimer = setTimeout(() => closePanel(), 900)
           return
         }
         if (Date.now() >= deadline) {

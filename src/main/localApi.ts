@@ -154,6 +154,13 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
   const path = (req.url ?? '/').split('?')[0]
 
+  // Startup polling only needs to distinguish Snag from an unused/local port.
+  // Keep it token-free so waking the app does not repeatedly attempt pairing.
+  if (req.method === 'GET' && path === '/health') {
+    sendJson(res, 200, { app: 'snag' }, origin)
+    return
+  }
+
   // Existing unpacked installs may live outside Snag's generated extension
   // folder and therefore have no token in config.js. Only a real Chromium
   // extension origin can request a token; ordinary websites are rejected.
