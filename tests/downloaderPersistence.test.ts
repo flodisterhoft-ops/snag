@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { DownloadJob } from '../src/shared/types'
@@ -84,6 +84,23 @@ describe('download queue persistence', () => {
     manager.initializePersistence(file, false)
 
     expect(manager.getJobs().map((item) => item.id)).toEqual(['recovered'])
+  })
+
+  it('permanently deletes a completed file and removes its queue entry', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'snag-jobs-'))
+    tempDirs.push(dir)
+    const file = join(dir, 'jobs.json')
+    const media = join(dir, 'download.mp4')
+    writeFileSync(media, 'video')
+    const completed = job('delete-me', 'completed')
+    completed.filepath = media
+    writeFileSync(file, JSON.stringify({ version: 1, jobs: [completed] }))
+
+    const manager = new DownloadManager()
+    manager.initializePersistence(file, false)
+    expect(manager.deleteCompletedFile('delete-me')).toEqual({ ok: true })
+    expect(existsSync(media)).toBe(false)
+    expect(manager.getJob('delete-me')).toBeNull()
   })
 })
 

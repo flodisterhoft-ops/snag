@@ -19,4 +19,11 @@ describe('Windows packaging', () => {
     expect(extension).toContain('return installBrowserExtension()')
     expect(extension).not.toContain('if (!getInstalledExtensionPath()) return null')
   })
+
+  it('uses the Windows Share verb so registered apps receive the actual file', () => {
+    const ipc = readFileSync('src/main/ipc.ts', 'utf8')
+    expect(ipc).toContain("$verb.DoIt()")
+    expect(ipc).toContain("handleTrusted('shareFile'")
+    expect(ipc).toContain("handleTrusted('deleteCompletedFiles'")
+  })
 })

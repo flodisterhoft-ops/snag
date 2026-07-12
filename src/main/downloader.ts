@@ -196,6 +196,32 @@ export class DownloadManager extends EventEmitter {
     this.schedulePersistence()
   }
 
+  deleteCompletedFile(id: string): { ok: boolean; error?: string } {
+    const job = this.jobs.get(id)
+    if (!job || job.status !== 'completed') return { ok: false, error: 'Only completed downloads can be deleted.' }
+    if (!job.filepath) return { ok: false, error: 'This download has no saved file path.' }
+    try {
+      if (existsSync(job.filepath)) unlinkSync(job.filepath)
+      this.removeJob(id)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message || 'Windows could not delete the file.' }
+    }
+  }
+
+  deleteAllCompletedFiles(): { deletedIds: string[]; errors: string[] } {
+    const deletedIds: string[] = []
+    const errors: string[] = []
+    for (const id of [...this.order]) {
+      const job = this.jobs.get(id)
+      if (!job || job.status !== 'completed' || !job.filepath) continue
+      const result = this.deleteCompletedFile(id)
+      if (result.ok) deletedIds.push(id)
+      else errors.push(`${job.request.title}: ${result.error}`)
+    }
+    return { deletedIds, errors }
+  }
+
   private activeCount(): number {
     return this.procs.size
   }

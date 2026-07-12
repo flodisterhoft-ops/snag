@@ -34,6 +34,7 @@ describe('browser integration', () => {
     expect(background).toContain('snag:job')
     expect(background).toContain('snag-check-app-version')
     expect(background).toContain('chrome.runtime.reload()')
+    expect(background).toContain('/extension/heartbeat')
     expect(content).toContain("setAttribute('role', 'dialog')")
     expect(content).toContain('prefers-reduced-motion')
     expect(content).toContain("el('div', 'progress-track')")

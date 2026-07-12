@@ -1758,6 +1758,29 @@ select {
   color: var(--text-2);
   cursor: pointer;
 }
+
+.queue-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-outline.danger {
+  color: var(--danger);
+  border-color: rgba(255, 107, 94, 0.35);
+}
+
+.queue-error {
+  margin: -10px 0 14px;
+  padding: 10px 12px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid rgba(255, 107, 94, 0.25);
+  border-radius: 9px;
+  font-size: 12px;
+}
 .best-toggle span {
   user-select: none;
 }
@@ -2193,6 +2216,64 @@ select {
 .update-changelog div {
   white-space: pre-wrap;
   user-select: text;
+}
+
+.extension-onboarding {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.extension-onboarding > p {
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+.extension-setup-primary {
+  min-height: 48px;
+  justify-content: center;
+}
+
+.extension-setup-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.extension-setup-steps div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.extension-setup-steps div > span {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: var(--accent-ink);
+  background: var(--accent);
+  font-weight: 800;
+  font-size: 11px;
+}
+
+.extension-setup-steps code {
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-2);
+  word-break: break-all;
+  user-select: text;
+}
+
+.extension-onboarding-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .update-actions {
   display: flex;

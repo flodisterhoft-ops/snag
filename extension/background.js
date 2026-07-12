@@ -146,6 +146,7 @@ async function reloadForNewAppVersion() {
     const stored = await chrome.storage.local.get('snagObservedAppVersion')
     const previous = stored.snagObservedAppVersion
     await chrome.storage.local.set({ snagObservedAppVersion: data.version })
+    await apiFetch(port, '/extension/heartbeat', { method: 'POST', body: '{}' }, 1200)
     if (typeof previous === 'string' && previous !== data.version) chrome.runtime.reload()
   } catch {
     /* Snag may be starting or shutting down; the next alarm retries. */

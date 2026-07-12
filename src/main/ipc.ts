@@ -1,6 +1,8 @@
 import { ipcMain, dialog, shell, clipboard, BrowserWindow, app } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { existsSync } from 'fs'
+import { execFile, spawn } from 'child_process'
+import { join } from 'path'
 import { analyze } from './metadata'
 import { downloadManager } from './downloader'
 import { loadSettings, saveSettings } from './settings'
@@ -27,6 +29,47 @@ import type {
   ProgressUpdate,
   DownloadJob
 } from '@shared/types'
+
+const SHARE_SCRIPT = `
+$target = $env:SNAG_SHARE_FILE
+if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { exit 2 }
+$shell = New-Object -ComObject Shell.Application
+$folder = $shell.Namespace((Split-Path -LiteralPath $target -Parent))
+$item = $folder.ParseName((Split-Path -Leaf $target))
+$verb = $item.Verbs() | Where-Object { $_.Name.Replace('&', '') -eq 'Share' } | Select-Object -First 1
+if (-not $verb) { exit 3 }
+$verb.DoIt()
+`
+
+function openWindowsShareSheet(target: string): Promise<string> {
+  if (process.platform !== 'win32') return Promise.resolve('File sharing is currently supported on Windows.')
+  const encoded = Buffer.from(SHARE_SCRIPT, 'utf16le').toString('base64')
+  return new Promise((resolve) => {
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded],
+      { windowsHide: true, timeout: 10000, env: { ...process.env, SNAG_SHARE_FILE: target } },
+      (error) => resolve(error ? 'Windows could not open the Share panel for this file.' : '')
+    )
+  })
+}
+
+function launchChromeExtensions(): string {
+  const candidates = [
+    process.env['PROGRAMFILES'] && join(process.env['PROGRAMFILES'], 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    process.env['PROGRAMFILES(X86)'] && join(process.env['PROGRAMFILES(X86)'], 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    process.env['LOCALAPPDATA'] && join(process.env['LOCALAPPDATA'], 'Google', 'Chrome', 'Application', 'chrome.exe')
+  ].filter((value): value is string => !!value)
+  const chrome = candidates.find((candidate) => existsSync(candidate))
+  if (!chrome) return 'Google Chrome was not found. Open chrome://extensions manually.'
+  try {
+    const child = spawn(chrome, ['chrome://extensions/'], { detached: true, stdio: 'ignore' })
+    child.unref()
+    return ''
+  } catch (err) {
+    return (err as Error).message || 'Chrome could not be opened.'
+  }
+}
 
 function broadcast(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -91,6 +134,22 @@ export function registerIpc(): void {
 
   handleTrusted('clearCompleted', async (): Promise<void> => {
     downloadManager.clearCompleted()
+  })
+
+  handleTrusted('deleteJobFile', async (_e, jobId: string) => {
+    return downloadManager.deleteCompletedFile(jobId)
+  })
+
+  handleTrusted('deleteCompletedFiles', async () => {
+    return downloadManager.deleteAllCompletedFiles()
+  })
+
+  handleTrusted('shareFile', async (_e, jobId: string): Promise<string> => {
+    const job = downloadManager.getJob(jobId)
+    if (!job || job.status !== 'completed' || !job.filepath || !existsSync(job.filepath)) {
+      return 'The completed file could not be found.'
+    }
+    return openWindowsShareSheet(job.filepath)
   })
 
   handleTrusted('removeJob', async (_e, jobId: string): Promise<void> => {
@@ -183,6 +242,24 @@ export function registerIpc(): void {
 
   handleTrusted('getBrowserExtensionPath', async (): Promise<string | null> => {
     return getInstalledExtensionPath()
+  })
+
+  handleTrusted('getBrowserExtensionStatus', async () => {
+    const settings = loadSettings()
+    const lastSeen = settings.browserExtensionLastSeen
+    return {
+      detected: lastSeen > 0 && Date.now() - lastSeen < 30 * 24 * 60 * 60 * 1000,
+      lastSeen,
+      path: getInstalledExtensionPath()
+    }
+  })
+
+  handleTrusted('openBrowserExtensionSetup', async () => {
+    const installed = installBrowserExtension()
+    if (!installed.ok || !installed.path) return installed
+    clipboard.writeText(installed.path)
+    const error = launchChromeExtensions()
+    return error ? { ...installed, error } : installed
   })
 
   handleTrusted('checkForUpdates', async () => {

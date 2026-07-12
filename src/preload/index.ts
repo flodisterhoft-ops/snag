@@ -45,6 +45,11 @@ const api: Api = {
   openInMainWindow: (url: string) => ipcRenderer.invoke('openInMainWindow', url),
   installBrowserExtension: () => ipcRenderer.invoke('installBrowserExtension'),
   getBrowserExtensionPath: () => ipcRenderer.invoke('getBrowserExtensionPath'),
+  getBrowserExtensionStatus: () => ipcRenderer.invoke('getBrowserExtensionStatus'),
+  openBrowserExtensionSetup: () => ipcRenderer.invoke('openBrowserExtensionSetup'),
+  deleteJobFile: (jobId: string) => ipcRenderer.invoke('deleteJobFile', jobId),
+  deleteCompletedFiles: () => ipcRenderer.invoke('deleteCompletedFiles'),
+  shareFile: (jobId: string) => ipcRenderer.invoke('shareFile', jobId),
   checkForUpdates: () => ipcRenderer.invoke('checkForUpdates'),
   dismissUpdates: () => ipcRenderer.invoke('dismissUpdates'),
   onUpdateAvailable: (cb: (u: UpdateAvailability) => void) => {

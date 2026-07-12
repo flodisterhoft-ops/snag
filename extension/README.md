@@ -27,6 +27,10 @@ developer mode — a one-time, ~30-second setup:
    folder that directly contains `manifest.json`.
 5. Reload video tabs that were already open so Chrome injects the new extension.
 
+If Snag has never detected the extension, the desktop app shows this same setup
+as a guided prompt. Users can postpone it for the current launch or permanently
+dismiss it.
+
 With Snag running, the overlay expands into the picker without opening another
 window. If Snag is closed and you choose the fallback, Chrome may ask *"Open
 Snag?"* before launching the desktop app.

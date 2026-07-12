@@ -26,6 +26,8 @@ function defaultSettings(): Settings {
     embedThumbnail: true,
     embedMetadata: true,
     browserHandoff: 'quick',
+    browserExtensionPromptDismissed: false,
+    browserExtensionLastSeen: 0,
     runInBackground: true,
     launchAtLogin: false,
     bestQualityMode: true,

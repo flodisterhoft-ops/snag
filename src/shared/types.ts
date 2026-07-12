@@ -171,6 +171,8 @@ export interface Settings {
   embedThumbnail: boolean
   embedMetadata: boolean
   browserHandoff: BrowserHandoff
+  browserExtensionPromptDismissed: boolean
+  browserExtensionLastSeen: number
   // Keep Snag alive in the tray when all windows close, so downloads continue.
   runInBackground: boolean
   // Start with Windows (tray only) so the quick popup opens instantly.
@@ -248,6 +250,11 @@ export interface Api {
   openInMainWindow: (url: string) => Promise<void>
   installBrowserExtension: () => Promise<ExtensionInstallResult>
   getBrowserExtensionPath: () => Promise<string | null>
+  getBrowserExtensionStatus: () => Promise<{ detected: boolean; lastSeen: number; path: string | null }>
+  openBrowserExtensionSetup: () => Promise<ExtensionInstallResult>
+  deleteJobFile: (jobId: string) => Promise<{ ok: boolean; error?: string }>
+  deleteCompletedFiles: () => Promise<{ deletedIds: string[]; errors: string[] }>
+  shareFile: (jobId: string) => Promise<string>
   // Updates
   checkForUpdates: () => Promise<UpdateAvailability>
   dismissUpdates: () => Promise<void>

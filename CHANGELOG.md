@@ -3,6 +3,14 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.7.0 — 2026-07-11
+
+- Detect the Chrome extension through an authenticated heartbeat.
+- Prompt first-time users with guided setup, Not now, and Don’t show again choices.
+- Add separate Clear list and confirmed Delete downloaded files queue actions.
+- Add per-download permanent deletion with confirmation.
+- Add Windows file sharing so Telegram, WhatsApp, and other registered share targets can receive the actual downloaded file.
+
 ## 1.6.3 — 2026-07-11
 
 - Prepare the stable Chrome-extension folder automatically on first app launch.

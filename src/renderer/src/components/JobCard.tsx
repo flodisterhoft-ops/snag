@@ -14,7 +14,7 @@ const STATUS_LABEL: Record<DownloadJob['status'], string> = {
 }
 
 export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
-  const { removeJob } = useStore()
+  const { removeJob, deleteJobFile } = useStore()
   const { status } = job
   const isActive = status === 'downloading' || status === 'processing'
   const pct = Math.round(job.progress)
@@ -31,6 +31,19 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
     } catch (err) {
       setActionError((err as Error).message || 'Windows could not open this file.')
     }
+  }
+
+  const shareDownloadedFile = async (): Promise<void> => {
+    setActionError(null)
+    const error = await window.api.shareFile(job.id)
+    if (error) setActionError(error)
+  }
+
+  const deleteDownloadedFile = async (): Promise<void> => {
+    if (!window.confirm(`Permanently delete “${job.request.title}” from disk? This cannot be undone.`)) return
+    setActionError(null)
+    const result = await deleteJobFile(job.id)
+    if (!result.ok) setActionError(result.error || 'Windows could not delete this file.')
   }
 
   return (
@@ -104,6 +117,13 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
           <>
             <button
               className="icon-btn"
+              title="Share file (Telegram, WhatsApp, and other Windows apps)"
+              onClick={() => void shareDownloadedFile()}
+            >
+              <Icon name="share" size={16} />
+            </button>
+            <button
+              className="icon-btn"
               title="Open file"
               onClick={() => void openDownloadedPath(false)}
             >
@@ -117,11 +137,18 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
               <Icon name="folder" size={16} />
             </button>
             <button
-              className="icon-btn"
-              title="Remove from list"
-              onClick={() => void removeJob(job.id)}
+              className="icon-btn danger"
+              title="Delete file from disk"
+              onClick={() => void deleteDownloadedFile()}
             >
               <Icon name="trash" size={16} />
+            </button>
+            <button
+              className="icon-btn"
+              title="Remove from list only"
+              onClick={() => void removeJob(job.id)}
+            >
+              <Icon name="close" size={16} />
             </button>
           </>
         )}

@@ -1,13 +1,22 @@
 import { useStore } from '../store'
 import { JobCard } from '../components/JobCard'
 import { Icon } from '../components/ui'
+import { useState } from 'react'
 
 export function Queue(): JSX.Element {
-  const { jobs, setView, clearFinished } = useStore()
+  const { jobs, setView, clearFinished, deleteCompletedFiles } = useStore()
+  const [bulkError, setBulkError] = useState<string | null>(null)
 
   const hasFinished = jobs.some(
     (j) => j.status === 'completed' || j.status === 'error' || j.status === 'canceled'
   )
+  const hasDownloadedFiles = jobs.some((job) => job.status === 'completed' && !!job.filepath)
+
+  const deleteFiles = async (): Promise<void> => {
+    if (!window.confirm('Permanently delete every completed downloaded file shown here? This cannot be undone.')) return
+    const result = await deleteCompletedFiles()
+    setBulkError(result.errors.length ? result.errors.join(' ') : null)
+  }
 
   return (
     <div className="screen queue">
@@ -18,12 +27,21 @@ export function Queue(): JSX.Element {
             {jobs.length === 0 ? 'Nothing here yet.' : `${jobs.length} in your list`}
           </p>
         </div>
-        {hasFinished && (
-          <button className="btn-ghost" onClick={() => void clearFinished()}>
-            <Icon name="trash" size={15} /> Clear finished
-          </button>
-        )}
+        <div className="queue-actions">
+          {hasFinished && (
+            <button className="btn-ghost" onClick={() => void clearFinished()}>
+              <Icon name="close" size={15} /> Clear list
+            </button>
+          )}
+          {hasDownloadedFiles && (
+            <button className="btn-outline danger" onClick={() => void deleteFiles()}>
+              <Icon name="trash" size={15} /> Delete downloaded files
+            </button>
+          )}
+        </div>
       </header>
+
+      {bulkError && <div className="queue-error">{bulkError}</div>}
 
       {jobs.length === 0 ? (
         <div className="empty-state">

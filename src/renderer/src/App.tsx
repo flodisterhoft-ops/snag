@@ -5,6 +5,7 @@ import { Queue } from './screens/Queue'
 import { SettingsScreen } from './screens/Settings'
 import { QuickApp } from './screens/Quick'
 import { UpdateModal } from './components/UpdateModal'
+import { ExtensionOnboarding } from './components/ExtensionOnboarding'
 import { Spinner } from './components/ui'
 
 // The quick-download window loads the same bundle with a #quick hash.
@@ -42,6 +43,7 @@ export default function App(): JSX.Element {
         )}
       </main>
       <UpdateModal />
+      <ExtensionOnboarding />
     </div>
   )
 }

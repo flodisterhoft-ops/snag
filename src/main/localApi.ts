@@ -189,6 +189,16 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return
   }
 
+  if (req.method === 'POST' && path === '/extension/heartbeat') {
+    const settings = loadSettings()
+    const now = Date.now()
+    if (now - settings.browserExtensionLastSeen > 5 * 60 * 1000) {
+      saveSettings({ browserExtensionLastSeen: now })
+    }
+    sendJson(res, 200, { ok: true }, origin)
+    return
+  }
+
   if (req.method === 'GET' && path.startsWith('/jobs/')) {
     const id = path.slice('/jobs/'.length)
     if (!/^job_[a-z0-9_]+$/i.test(id)) {

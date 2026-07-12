@@ -30,6 +30,8 @@ interface Store {
   jobs: DownloadJob[]
   clearFinished: () => Promise<void>
   removeJob: (id: string) => Promise<void>
+  deleteJobFile: (id: string) => Promise<{ ok: boolean; error?: string }>
+  deleteCompletedFiles: () => Promise<{ deletedIds: string[]; errors: string[] }>
   activeCount: number
   toolStatus: ToolStatus | null
   refreshTools: () => Promise<void>
@@ -153,6 +155,21 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
     setJobs((prev) => removeJobById(prev, id))
   }
 
+  const deleteJobFile = async (id: string): Promise<{ ok: boolean; error?: string }> => {
+    const result = await window.api.deleteJobFile(id)
+    if (result.ok) setJobs((prev) => removeJobById(prev, id))
+    return result
+  }
+
+  const deleteCompletedFiles = async (): Promise<{ deletedIds: string[]; errors: string[] }> => {
+    const result = await window.api.deleteCompletedFiles()
+    if (result.deletedIds.length) {
+      const deleted = new Set(result.deletedIds)
+      setJobs((prev) => prev.filter((job) => !deleted.has(job.id)))
+    }
+    return result
+  }
+
   const activeCount = useMemo(
     () => jobs.filter((j) => j.status === 'downloading' || j.status === 'processing' || j.status === 'queued').length,
     [jobs]
@@ -169,6 +186,8 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
     jobs,
     clearFinished,
     removeJob,
+    deleteJobFile,
+    deleteCompletedFiles,
     activeCount,
     toolStatus,
     refreshTools,
