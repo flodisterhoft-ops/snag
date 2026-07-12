@@ -7,7 +7,7 @@ import { FormatPicker, FormatSelection } from '../components/FormatPicker'
 import { looksLikeUrl, shortPath } from '../lib/format'
 
 export function Home(): JSX.Element {
-  const { settings, updateSettings, setView, handoffUrl, clearHandoffUrl } = useStore()
+  const { settings, updateSettings, setView, handoff, clearHandoffUrl } = useStore()
 
   const [url, setUrl] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
@@ -35,12 +35,14 @@ export function Home(): JSX.Element {
   }, [settings])
 
   // A link handed off from the browser (snag://) starts analyzing immediately.
+  // Keyed on the handoff seq, not the URL, so repeated clicks on the same link
+  // each re-fire instead of collapsing on string equality.
   useEffect(() => {
-    if (!handoffUrl) return
+    if (!handoff) return
     clearHandoffUrl()
-    void runAnalyze(handoffUrl)
+    void runAnalyze(handoff.url)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handoffUrl])
+  }, [handoff?.seq])
 
   const checkClipboard = useCallback(async () => {
     try {
