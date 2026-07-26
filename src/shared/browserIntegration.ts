@@ -5,7 +5,7 @@ const LANGUAGE_CODE_RE = /^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/
 // Chrome derives the ID from that public key (first 16 bytes of its SHA-256,
 // hex mapped to a–p) instead of the folder path, so every copy of the
 // extension loads under this ID no matter where it lives on disk.
-export const SNAG_EXTENSION_ID = 'ccgpapfllinghkheikonhknlflbpdgfd'
+export const SNAG_EXTENSION_ID = 'ijgfhooengagekghikdmadojinimiedo'
 
 export function isChromeExtensionOrigin(origin: string | undefined): boolean {
   return typeof origin === 'string' && CHROME_EXTENSION_ORIGIN_RE.test(origin)

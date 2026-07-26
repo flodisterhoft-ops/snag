@@ -3,6 +3,11 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.8.4 — Unreleased
+
+- Regenerate the Chrome extension's identity key so it is held by the Snag project rather than an outside contributor. The extension's pinned ID changes as a result.
+- **One-time step after updating:** Chrome treats the new identity as a new extension, so the existing entry may show an error. Open `chrome://extensions`, remove the old Snag entry if it is errored, and use **Load unpacked** on Snag's extension folder again (Snag's Settings screen shows the folder location). Your pairing keeps working; per-site disable preferences reset.
+
 ## 1.8.3 — 2026-07-12
 
 - Replace the Chrome audio picker’s full language list with a clean preferred-language prompt for new users.

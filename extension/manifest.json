@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmo6SZ+PNqGzkz+N7d3Zuam5uQ6zrqanRQtquS3OHysJHguYgSiM9KOM8BHlmAJqXR6Ja08xa7ABaVqApYD3uO6qiI9cTKziqApPCculOJVibpmRp1Y6ZtBH1Wljz/Ba1HQ28pnxYwtF/1jLq7yQ6vt79iEM6SdA6/noBX2Wb8w4vk0qRYY/9xkDMgApxU1MuRbqei/U4B7+Qu4ZIJ8CkjQS4su9xHod7Cwiq83C+eu2Yim0MUgSDKxH5Az+fCTgrNd7ZreTKkT0gSK6N1ieMCNYieHKkTWOshlQ0IZyODUqDJXqCzVUYpyh3nCsamacSTZZSgdtbw6XBPx6wwZAmLwIDAQAB",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvxpKfn3ukrcHiIpzZ8XZACzOylBcHZBjntZG8/rWXEmhRHvse2f6m2euzv30YKcAaU3Vt0FztWkYL56tQLsQjCSgE3lj7/kZPkMrEBmYuGqjvoIU8SiRkGlAKEGD3DBaPALSZX8a25PAWhqEcZHkf/6BVjXlkrYSZCSgrb6J0Syw4lJVZZZXmlnkq7taho4pL6v8VdFYWFat0T57CBUq+EKzdK1Q3vZog3D7zAbL3avd89TW/jFUh8kUhsDQuE3F3mg2hkCzi7qeumOs64S3AVlLESnXW3wd3M8y1LINEGfVBuVJ7dT7bfVxZRzmPQcOGkOP8HyzpP8K+zQaX7kcJQIDAQAB",
   "name": "Snag for Chrome",
   "version": "1.5.0",
   "description": "Download videos with Snag — quality picker right on the page.",
