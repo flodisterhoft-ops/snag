@@ -6,7 +6,8 @@ inside Snag before an update is installed.
 ## 1.8.4 — Unreleased
 
 - Regenerate the Chrome extension's identity key so it is held by the Snag project rather than an outside contributor. The extension's pinned ID changes as a result.
-- **One-time step after updating:** Chrome treats the new identity as a new extension, so the existing entry may show an error. Open `chrome://extensions`, remove the old Snag entry if it is errored, and use **Load unpacked** on Snag's extension folder again (Snag's Settings screen shows the folder location). Your pairing keeps working; per-site disable preferences reset.
+- If Chrome is open when Snag updates, the extension switches to its new identity automatically — you may just see a leftover disabled "Snag for Chrome" entry in `chrome://extensions`, which is safe to remove.
+- If Chrome was closed during the update and the extension shows an error on the next launch, remove the old entry and use **Load unpacked** on Snag's extension folder once (Snag's Settings screen shows the folder location). Pairing keeps working either way; per-site disable preferences reset.
 
 ## 1.8.3 — 2026-07-12
 
