@@ -3,7 +3,7 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
-## 1.8.4 — Unreleased
+## 1.8.4 — 2026-07-26
 
 - Regenerate the Chrome extension's identity key so it is held by the Snag project rather than an outside contributor. The extension's pinned ID changes as a result.
 - If Chrome is open when Snag updates, the extension switches to its new identity automatically — you may just see a leftover disabled "Snag for Chrome" entry in `chrome://extensions`, which is safe to remove.
