@@ -184,7 +184,11 @@ async function installArchive(tool) {
 
   const extractDir = mkdtempSync(join(tmpdir(), 'snag-tool-extract-'))
   try {
-    const result = spawnSync('tar', ['-xf', archive, '-C', extractDir], {
+    // Resolving tar via PATH breaks under Git Bash, whose GNU tar reads the
+    // drive-letter colon in C:\... as a remote-host separator. This step is
+    // win32-only, so pin the system bsdtar, which accepts drive paths.
+    const systemTar = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe')
+    const result = spawnSync(existsSync(systemTar) ? systemTar : 'tar', ['-xf', archive, '-C', extractDir], {
       encoding: 'utf8',
       windowsHide: true
     })
