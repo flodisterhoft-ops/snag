@@ -11,11 +11,13 @@ import {
 import type {
   DownloadJob,
   Settings,
+  SettingsSection,
+  StorageStatus,
   ToolStatus,
   ProgressUpdate,
   UpdateAvailability
 } from '@shared/types'
-import { applyProgressUpdate, removeFinishedJobs, removeJobById } from './jobState'
+import { applyProgressUpdate, removeFinishedJobs, removeJobById, reorderJobs as reorderJobList } from './jobState'
 
 export type View = 'home' | 'queue' | 'settings'
 
@@ -32,9 +34,14 @@ interface Store {
   retryStartup: () => Promise<void>
   view: View
   setView: (v: View) => void
+  // Which Settings tab is showing; openSettings() jumps straight to one.
+  settingsSection: SettingsSection
+  setSettingsSection: (section: SettingsSection) => void
+  openSettings: (section?: SettingsSection) => void
   settings: Settings | null
   updateSettings: (patch: Partial<Settings>) => Promise<void>
   jobs: DownloadJob[]
+  reorderJobs: (ids: string[]) => Promise<void>
   clearFinished: () => Promise<void>
   removeJob: (id: string) => Promise<void>
   deleteJobFile: (id: string) => Promise<{ ok: boolean; error?: string }>
@@ -43,6 +50,9 @@ interface Store {
   toolStatus: ToolStatus | null
   refreshTools: () => Promise<void>
   appVersion: string | null
+  // Where this process's files really go; redirected when a packaged parent
+  // app sandboxed Snag (see SandboxNotice).
+  storage: StorageStatus | null
   // URL handed off from the browser via snag://, waiting to be analyzed.
   // Each handoff carries a unique seq so consumers re-fire even when the same
   // URL is handed off twice in a row.
@@ -65,10 +75,12 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
   const [ready, setReady] = useState(false)
   const [startupError, setStartupError] = useState<string | null>(null)
   const [view, setView] = useState<View>('home')
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('general')
   const [settings, setSettings] = useState<Settings | null>(null)
   const [jobs, setJobs] = useState<DownloadJob[]>([])
   const [toolStatus, setToolStatus] = useState<ToolStatus | null>(null)
   const [appVersion, setAppVersion] = useState<string | null>(null)
+  const [storage, setStorage] = useState<StorageStatus | null>(null)
   const [handoffs, setHandoffs] = useState<Handoff[]>([])
   const handoffSeq = useRef(0)
   const [updates, setUpdates] = useState<UpdateAvailability | null>(null)
@@ -78,15 +90,20 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
   const initialize = useCallback(async (): Promise<void> => {
     setReady(false)
     setStartupError(null)
-    const [settingsResult, jobsResult, toolsResult, versionResult] = await Promise.allSettled([
-      window.api.getSettings(),
-      window.api.getJobs(),
-      window.api.getToolStatus(),
-      window.api.getAppVersion()
-    ])
+    const [settingsResult, jobsResult, toolsResult, versionResult, storageResult] =
+      await Promise.allSettled([
+        window.api.getSettings(),
+        window.api.getJobs(),
+        window.api.getToolStatus(),
+        window.api.getAppVersion(),
+        window.api.getStorageStatus()
+      ])
 
     if (versionResult.status === 'fulfilled') setAppVersion(versionResult.value)
     else console.error('Failed to read app version:', versionResult.reason)
+
+    if (storageResult.status === 'fulfilled') setStorage(storageResult.value)
+    else console.error('Failed to read the storage status:', storageResult.reason)
 
     if (settingsResult.status === 'fulfilled') {
       setSettings(settingsResult.value)
@@ -129,18 +146,24 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
       setView('home')
     }
     const offExternal = window.api.onExternalUrl(receiveUrl)
-    const offOpenSettings = window.api.onOpenSettings(() => {
-      if (mounted) setView('settings')
-    })
+    const openSettingsAt = (section: SettingsSection): void => {
+      if (!mounted) return
+      setSettingsSection(section)
+      setView('settings')
+    }
+    const offOpenSettings = window.api.onOpenSettings(openSettingsAt)
     const offUpdates = window.api.onUpdateAvailable((u: UpdateAvailability) => {
       if (mounted) setUpdates(u)
+    })
+    const offTools = window.api.onToolsChanged(() => {
+      if (mounted) void window.api.getToolStatus().then(setToolStatus).catch(() => {})
     })
 
     void window.api.consumePendingExternalUrl().then((url) => {
       if (url) receiveUrl(url)
     })
-    void window.api.consumePendingOpenSettings().then((open) => {
-      if (mounted && open) setView('settings')
+    void window.api.consumePendingOpenSettings().then((section) => {
+      if (section) openSettingsAt(section)
     })
 
     return () => {
@@ -150,8 +173,14 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
       offExternal()
       offOpenSettings()
       offUpdates()
+      offTools()
     }
   }, [initialize])
+
+  const reorderJobs = async (ids: string[]): Promise<void> => {
+    setJobs((prev) => reorderJobList(prev, ids))
+    await window.api.reorderJobs(ids)
+  }
 
   const updateSettings = async (patch: Partial<Settings>): Promise<void> => {
     const next = await window.api.setSettings(patch)
@@ -189,7 +218,7 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
   }
 
   const activeCount = useMemo(
-    () => jobs.filter((j) => j.status === 'downloading' || j.status === 'processing' || j.status === 'queued').length,
+    () => jobs.filter((j) => j.status === 'downloading' || j.status === 'processing' || j.status === 'queued' || j.status === 'paused').length,
     [jobs]
   )
 
@@ -199,9 +228,16 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
     retryStartup: initialize,
     view,
     setView,
+    settingsSection,
+    setSettingsSection,
+    openSettings: (section = 'general') => {
+      setSettingsSection(section)
+      setView('settings')
+    },
     settings,
     updateSettings,
     jobs,
+    reorderJobs,
     clearFinished,
     removeJob,
     deleteJobFile,
@@ -210,6 +246,7 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
     toolStatus,
     refreshTools,
     appVersion,
+    storage,
     handoff: handoffs[0] ?? null,
     clearHandoffUrl: () => setHandoffs((prev) => prev.slice(1)),
     updates,

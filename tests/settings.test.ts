@@ -30,7 +30,17 @@ const valid: Settings = {
   bestQualityMode: false,
   multiAudio: { enabled: true, languages: ['ja'] },
   autoCheckUpdates: false,
-  lastUpdateCheck: 1700000000001
+  lastUpdateCheck: 1700000000001,
+  autoUpdateYtdlp: false,
+  cookieSource: 'firefox',
+  cookiesFile: 'C:\\cookies.txt',
+  cookiesSyncedAt: 1700000000002,
+  watchClipboard: false,
+  globalShortcutEnabled: false,
+  sponsorBlock: { remove: ['sponsor'], mark: ['intro'] },
+  theme: 'light',
+  quickWindowSize: { width: 500, height: 700 },
+  openWhenDone: true
 }
 
 describe('sanitizeSettings', () => {

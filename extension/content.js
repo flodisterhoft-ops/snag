@@ -89,6 +89,22 @@
     return location.href
   }
 
+  // Title and thumbnail the page already knows, so the panel can show the
+  // video header the instant it opens instead of after yt-dlp finishes.
+  function pageMeta(video) {
+    const url = resolveTargetUrl(video)
+    let title = (document.title || '').replace(/\s*[-–|]\s*(YouTube|Vimeo|TikTok|X|Twitter|Dailymotion|Twitch)\s*$/i, '').trim()
+    let thumbnail = null
+    const yt = url.match(/[?&]v=([\w-]{6,})/) || url.match(/\/shorts\/([\w-]{6,})/)
+    if (/(^|\.)youtube\.com$/i.test(HOST) && yt) thumbnail = `https://i.ytimg.com/vi/${yt[1]}/hqdefault.jpg`
+    else {
+      const og = document.querySelector('meta[property="og:image"], meta[name="twitter:image"]')
+      if (og && og.content && /^https?:/i.test(og.content)) thumbnail = og.content
+    }
+    if (window !== window.top && !thumbnail) title = ''
+    return { title, thumbnail }
+  }
+
   function sendMessage(msg) {
     return new Promise((resolve) => {
       try {
@@ -352,12 +368,22 @@
     return node
   }
 
+  // The panel is placed once, next to the button that opened it, and then
+  // stays pinned to that spot in the viewport. Following the button while the
+  // page scrolls or YouTube's layout settles made it wander and disappear.
   function positionPanel(host, btn) {
     const r = btn.getBoundingClientRect()
     const left = Math.max(8, Math.min(r.right - PANEL_WIDTH, innerWidth - PANEL_WIDTH - 8))
     const top = Math.max(8, Math.min(r.top, innerHeight - 120))
     host.style.left = left + 'px'
     host.style.top = top + 'px'
+  }
+
+  function clampPanel(host) {
+    const left = parseFloat(host.style.left) || 8
+    const top = parseFloat(host.style.top) || 8
+    host.style.left = Math.max(8, Math.min(left, innerWidth - PANEL_WIDTH - 8)) + 'px'
+    host.style.top = Math.max(8, Math.min(top, innerHeight - 120)) + 'px'
   }
 
   function openPanel(btn, video) {
@@ -400,18 +426,16 @@
     }
     const onKey = (e) => { if (e.key === 'Escape') closePanel() }
     const onNav = () => closePanel(true)
+    const onResize = () => clampPanel(host)
     const outsideClickTimer = setTimeout(() => document.addEventListener('click', onDocClick, true), 0)
     document.addEventListener('keydown', onKey, true)
     addEventListener('popstate', onNav)
     addEventListener('yt-navigate-start', onNav, true)
+    addEventListener('resize', onResize)
     document.addEventListener('fullscreenchange', onNav)
 
     panel = {
       host, root, pageUrl, anchor: btn, returnFocus: btn,
-      reposition: () => {
-        const anchor = panel && panel.host === host ? panel.anchor : btn
-        if (anchor && anchor.isConnected) positionPanel(host, anchor)
-      },
       cleanup: () => {
         if (btn.isConnected) btn.style.visibility = 'visible'
         if (state.pollTimer) clearTimeout(state.pollTimer)
@@ -421,9 +445,11 @@
         document.removeEventListener('keydown', onKey, true)
         removeEventListener('popstate', onNav)
         removeEventListener('yt-navigate-start', onNav, true)
+        removeEventListener('resize', onResize)
         document.removeEventListener('fullscreenchange', onNav)
       }
     }
+    const meta = pageMeta(video)
 
     const LOGO = '<svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>'
     const noMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -455,20 +481,39 @@
     }
 
     // ----- message screens (loading / not running / error) -----
+    function buildHead(title, thumbnail, line) {
+      const head = el('div', 'head')
+      if (thumbnail) {
+        const thumb = el('span', 'thumb')
+        const img = document.createElement('img')
+        img.alt = ''
+        img.referrerPolicy = 'no-referrer'
+        img.addEventListener('error', () => img.remove())
+        img.src = thumbnail
+        thumb.appendChild(img)
+        head.appendChild(thumb)
+      } else {
+        const dot = el('span', 'dot')
+        dot.innerHTML = LOGO
+        head.appendChild(dot)
+      }
+      const txt = el('div', 'head-txt')
+      txt.appendChild(el('div', 't', title || 'Snag'))
+      if (line) txt.appendChild(el('div', 'm', line))
+      const x = el('button', 'x', '✕')
+      x.type = 'button'
+      x.title = 'Close'
+      x.setAttribute('aria-label', 'Close download options')
+      x.addEventListener('click', () => closePanel())
+      head.append(txt, x)
+      return head
+    }
+
     function renderMessage(children) {
       if (state.pollTimer) clearTimeout(state.pollTimer)
       root.classList.remove('stage-progress', 'stage-done')
       root.textContent = ''
-      const head = el('div', 'head')
-      const dot = el('span', 'dot')
-      dot.innerHTML = LOGO
-      const txt = el('div', 'head-txt')
-      txt.appendChild(el('div', 't', 'Snag'))
-      const x = el('button', 'x', '✕')
-      x.type = 'button'
-      x.setAttribute('aria-label', 'Close download options')
-      x.addEventListener('click', () => closePanel())
-      head.append(dot, txt, x)
+      const head = buildHead(meta.title, meta.thumbnail, meta.title ? hostLabel() : '')
       const body = el('div', 'center')
       for (const n of children) body.appendChild(n)
       root.append(head, body)
@@ -532,29 +577,11 @@
       root.textContent = ''
 
       // Header: thumbnail + title + duration/site.
-      const head = el('div', 'head')
-      const thumb = el('span', 'thumb')
-      if (state.info.thumbnail) {
-        const img = document.createElement('img')
-        img.alt = ''
-        img.referrerPolicy = 'no-referrer'
-        img.addEventListener('error', () => img.remove())
-        img.src = state.info.thumbnail
-        thumb.appendChild(img)
-      }
-      const txt = el('div', 'head-txt')
-      txt.appendChild(el('div', 't', state.info.title))
-      const meta = []
-      if (state.info.durationString) meta.push(state.info.durationString)
-      else if (state.info.isLive) meta.push('Live')
-      meta.push(hostLabel())
-      txt.appendChild(el('div', 'm', meta.join(' · ')))
-      const x = el('button', 'x', '✕')
-      x.type = 'button'
-      x.title = 'Close'
-      x.setAttribute('aria-label', 'Close download options')
-      x.addEventListener('click', () => closePanel())
-      head.append(thumb, txt, x)
+      const line = []
+      if (state.info.durationString) line.push(state.info.durationString)
+      else if (state.info.isLive) line.push('Live')
+      line.push(hostLabel())
+      const head = buildHead(state.info.title, state.info.thumbnail || meta.thumbnail, line.join(' · '))
 
       // Middle: Video/Audio toggle + the active view. Collapses while downloading.
       const mid = el('div', 'mid')
@@ -763,7 +790,7 @@
             const settings = el('button', 'btn2 accent2', 'Open Settings')
             settings.type = 'button'
             settings.addEventListener('click', async () => {
-              const res = await sendMessage({ type: 'snag:open-settings' })
+              const res = await sendMessage({ type: 'snag:open-settings', section: 'languages' })
               if (res && res.ok) closePanel()
             })
             prompt.appendChild(settings)
@@ -995,6 +1022,12 @@
     btn.type = 'button'
     btn.title = 'Download with Snag'
     btn.setAttribute('aria-label', 'Download with Snag')
+    // Hovering is a strong hint that a click is coming: start (or reuse) the
+    // analysis right away so the picker is ready when the panel opens.
+    btn.addEventListener('pointerenter', () => {
+      const url = resolveTargetUrl(btn._snagVideo)
+      if (!analysisByUrl.has(url)) void requestAnalysis(url)
+    })
     btn.addEventListener(
       'click',
       (e) => {
@@ -1028,11 +1061,78 @@
     return true
   }
 
+  // Player controls the button must never sit on top of (YouTube Shorts keeps
+  // mute/captions/more in the top-right corner, other players put share or
+  // settings there). Anything clickable found under the intended spot pushes
+  // the button further down the video's edge.
+  const CONTROL_SELECTOR =
+    'button, a[href], input, select, textarea, [role="button"], [role="slider"], [role="menuitem"], [role="link"], [role="checkbox"], [role="switch"]'
+  const PLACEMENT_STEPS = [0, 44, 88, 132]
+  const PLACEMENT_RECHECK_MS = 1500
+
+  function blockedAt(left, top, btn, video) {
+    let stack
+    try {
+      stack = document.elementsFromPoint(left + BTN_SIZE / 2, top + BTN_SIZE / 2)
+    } catch {
+      return false
+    }
+    for (const node of stack) {
+      if (node === btn || (node.dataset && node.dataset.snagPanel)) continue
+      if (node === video) return false
+      const control = node.closest ? node.closest(CONTROL_SELECTOR) : null
+      // A link wrapping the whole player is not a control in the way.
+      if (control && !control.contains(video)) return true
+    }
+    return false
+  }
+
+  // Height of a player's top bar when it has one (classic YouTube layout),
+  // so the button starts below it instead of colliding on hover.
+  function playerTopChrome(video) {
+    const player = video.closest && video.closest('.html5-video-player')
+    const top = player && player.querySelector('.ytp-chrome-top')
+    if (!top) return 0
+    const h = top.getBoundingClientRect().height
+    return h > 0 && h < 120 ? h : 0
+  }
+
+  // Returns false when the visible part of the video is too small to host
+  // the button (mostly scrolled out of view).
   function position(video, btn) {
     const rect = video.getBoundingClientRect()
-    btn.style.top = Math.min(Math.max(rect.top + INSET, 4), innerHeight - BTN_SIZE - 4) + 'px'
-    btn.style.left =
-      Math.min(Math.max(rect.right - BTN_SIZE - INSET, 4), innerWidth - BTN_SIZE - 4) + 'px'
+    const visTop = Math.max(rect.top, 0)
+    const visBottom = Math.min(rect.bottom, innerHeight)
+    const visLeft = Math.max(rect.left, 0)
+    const visRight = Math.min(rect.right, innerWidth)
+    if (visBottom - visTop < BTN_SIZE + 2 * INSET || visRight - visLeft < BTN_SIZE + 2 * INSET) return false
+
+    const left = visRight - BTN_SIZE - INSET
+    const baseTop = rect.top >= 0 ? rect.top + INSET + playerTopChrome(video) : visTop + INSET
+    const maxTop = visBottom - BTN_SIZE - INSET
+
+    const now = performance.now()
+    const place = btn._snagPlace || (btn._snagPlace = { offset: 0, key: '', checkedAt: 0 })
+    const key = Math.round(rect.width) + 'x' + Math.round(rect.height) + '@' + Math.round(baseTop)
+    if (key !== place.key || now - place.checkedAt > PLACEMENT_RECHECK_MS) {
+      place.key = key
+      place.checkedAt = now
+      // Keep the current offset while it is still clear; otherwise walk down.
+      const order = place.offset ? [place.offset, ...PLACEMENT_STEPS] : PLACEMENT_STEPS
+      let chosen = 0
+      for (const offset of order) {
+        const top = baseTop + offset
+        if (top > maxTop) continue
+        if (!blockedAt(left, top, btn, video)) {
+          chosen = offset
+          break
+        }
+      }
+      place.offset = chosen
+    }
+    btn.style.left = left + 'px'
+    btn.style.top = Math.min(baseTop + place.offset, maxTop) + 'px'
+    return true
   }
 
   let lastHref = location.href
@@ -1066,28 +1166,45 @@
           }
           buttons.set(video, btn)
         }
-        btn.style.display = 'block'
-        position(video, btn)
-        prefetchAnalysis(video)
+        // While a page is still laying itself out the player jumps around;
+        // show the button only once its box has held still for a moment.
+        if (!btn._snagSettled) {
+          const rect = video.getBoundingClientRect()
+          const sig = [rect.left, rect.top, rect.width, rect.height].map(Math.round).join(',')
+          const now = performance.now()
+          if (btn._snagSig !== sig) {
+            btn._snagSig = sig
+            btn._snagSigAt = now
+          }
+          if (now - btn._snagSigAt < 180) {
+            btn.style.display = 'none'
+            setTimeout(schedule, 200)
+            continue
+          }
+          btn._snagSettled = true
+        }
+        if (position(video, btn)) {
+          btn.style.display = 'block'
+          prefetchAnalysis(video)
+        } else {
+          btn.style.display = 'none'
+        }
       } else if (btn) {
         btn.style.display = 'none'
       }
     }
     // Videos that left the DOM (SPA navigation) take their buttons with them.
+    // An open panel stays where it is; it belongs to the video it was opened for.
     for (const [video, btn] of buttons) {
       if (!seen.has(video)) {
-        if (panel && panel.anchor === btn) {
+        if (panel && panel.returnFocus === btn) {
           const replacement = [...buttons.values()].find((candidate) => candidate !== btn && candidate.isConnected && candidate.style.display !== 'none')
-          if (replacement) {
-            panel.anchor = replacement
-            panel.returnFocus = replacement
-          }
+          if (replacement) panel.returnFocus = replacement
         }
         btn.remove()
         buttons.delete(video)
       }
     }
-    if (panel) panel.reposition()
   }
 
   let scheduled = false
@@ -1115,8 +1232,11 @@
   addEventListener('scroll', schedule, { passive: true, capture: true })
   addEventListener('resize', schedule, { passive: true })
   document.addEventListener('fullscreenchange', schedule)
-  // Layout can shift without DOM mutations (player resizes, lazy CSS) — cheap heartbeat.
-  setInterval(schedule, 800)
+  // Layout can shift without DOM mutations (player resizes, lazy CSS) — cheap
+  // heartbeat, but only on pages that actually have a video.
+  setInterval(() => {
+    if (buttons.size || document.getElementsByTagName('video').length) schedule()
+  }, 800)
 
   chrome.storage.local
     .get('disabledSites')

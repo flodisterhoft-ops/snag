@@ -23,6 +23,15 @@ export const YOUTUBE_CLIENT_ARGS = [
 export interface BuildContext {
   ffmpegLocation: string | null
   nodeRuntimePath?: string | null
+  // --cookies / --cookies-from-browser for signed-in downloads.
+  cookieArgs?: string[]
+}
+
+// yt-dlp --download-sections wants "*START-END"; seconds with millisecond
+// precision keep the trim editor's exact choice.
+export function sectionArgument(start: number, end: number): string {
+  const fmt = (v: number): string => Math.max(0, v).toFixed(3)
+  return `*${fmt(start)}-${fmt(end)}`
 }
 
 // Pure: turns a request + settings into the full yt-dlp argument vector
@@ -45,6 +54,7 @@ export function buildDownloadArgs(
   if (ctx.nodeRuntimePath) {
     args.push('--no-js-runtimes', '--js-runtimes', `node:${ctx.nodeRuntimePath}`)
   }
+  if (ctx.cookieArgs && ctx.cookieArgs.length > 0) args.push(...ctx.cookieArgs)
 
   if (req.downloadWholePlaylist) args.push('--yes-playlist')
   else args.push('--no-playlist')
@@ -65,13 +75,26 @@ export function buildDownloadArgs(
   }
 
   // Output template. Whole-playlist downloads go into a per-playlist subfolder.
-  const namePart = `${settings.filenameTemplate}.%(ext)s`
+  // A trimmed download carries its time range so two cuts of one video coexist.
+  const section = req.section && req.section.end > req.section.start ? req.section : null
+  const namePart = `${settings.filenameTemplate}${section ? ' [%(section_start)d-%(section_end)d]' : ''}.%(ext)s`
   const outTemplate = req.downloadWholePlaylist
     ? join(req.saveDir, '%(playlist_title)s', namePart)
     : join(req.saveDir, namePart)
   args.push('-o', outTemplate)
 
   if (settings.embedMetadata) args.push('--embed-metadata')
+
+  if (section) {
+    args.push('--download-sections', sectionArgument(section.start, section.end))
+    if (section.precise) args.push('--force-keyframes-at-cuts')
+  }
+
+  // SponsorBlock: cut categories are removed from the file, marked ones become
+  // chapters. Both need ffmpeg, which every download already has.
+  const { remove, mark } = settings.sponsorBlock
+  if (remove.length > 0) args.push('--sponsorblock-remove', remove.join(','))
+  if (mark.length > 0) args.push('--sponsorblock-mark', mark.join(','), '--embed-chapters')
 
   if (req.kind === 'audio') {
     buildAudioArgs(req, settings, args)

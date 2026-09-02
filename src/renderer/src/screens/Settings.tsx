@@ -1,13 +1,22 @@
-import { ReactNode, useEffect, useState } from 'react'
+import { ReactNode, useCallback, useEffect, useState } from 'react'
 import type {
   Settings,
   AudioOutputFormat,
   VideoContainer,
-  BrowserHandoff
+  BrowserHandoff,
+  BrowserExtensionStatus,
+  CookieSource,
+  CookieStatus,
+  GlobalShortcutStatus,
+  SettingsSection,
+  SponsorBlockCategory,
+  Theme
 } from '@shared/types'
+import { SPONSORBLOCK_CATEGORIES } from '@shared/types'
 import { useStore } from '../store'
-import { Icon, Segmented, Spinner, Toggle } from '../components/ui'
-import { shortPath } from '../lib/format'
+import { Icon, IconName, Segmented, Spinner, Toggle } from '../components/ui'
+import { ExtensionSetup } from '../components/ExtensionSetup'
+import { relativeTime, shortPath } from '../lib/format'
 
 const TEMPLATE_PRESETS = [
   { value: '%(title)s', label: 'Title' },
@@ -36,6 +45,16 @@ const AUDIO_LANGUAGES: { code: string; label: string }[] = [
   { code: 'nl', label: 'Dutch' }
 ]
 
+// One tab per concern, so nothing needs a long scroll.
+const TABS: { id: SettingsSection; label: string; icon: IconName; desc: string }[] = [
+  { id: 'general', label: 'General', icon: 'settings', desc: 'Where files go and how Snag behaves' },
+  { id: 'speed', label: 'Speed', icon: 'sparkle', desc: 'Parallel downloads, connection boost, bandwidth cap' },
+  { id: 'files', label: 'Files', icon: 'folder', desc: 'File names, containers, formats, and embedded extras' },
+  { id: 'languages', label: 'Languages', icon: 'audio', desc: 'Audio tracks and subtitles' },
+  { id: 'browser', label: 'Browser', icon: 'open', desc: 'Chrome extension and browser handoff' },
+  { id: 'engine', label: 'Engine', icon: 'retry', desc: 'yt-dlp, ffmpeg, and updates' }
+]
+
 const baseCode = (code: string): string => code.toLowerCase().split('-')[0]
 
 function previewName(tpl: string): string {
@@ -51,10 +70,10 @@ function previewName(tpl: string): string {
   )
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }): JSX.Element {
+function Section({ title, children }: { title?: string; children: ReactNode }): JSX.Element {
   return (
     <section className="settings-section">
-      <h2 className="section-title">{title}</h2>
+      {title && <h2 className="section-title">{title}</h2>}
       <div className="section-body">{children}</div>
     </section>
   )
@@ -83,32 +102,78 @@ function Row({
 }
 
 export function SettingsScreen(): JSX.Element {
-  const { settings, updateSettings, toolStatus, refreshTools, setUpdates } = useStore()
+  const {
+    settings,
+    updateSettings,
+    toolStatus,
+    refreshTools,
+    setUpdates,
+    settingsSection,
+    setSettingsSection
+  } = useStore()
   const [form, setForm] = useState<Settings | null>(settings)
+  // Settings can change behind this screen (the Chrome panel saves audio
+  // languages through the local API); mirror them so the form never goes stale.
+  useEffect(() => {
+    if (settings) setForm(settings)
+  }, [settings])
+
   const [updating, setUpdating] = useState(false)
   const [updateOutput, setUpdateOutput] = useState<string | null>(null)
   // Local editable buffer so in-progress commas/spaces aren't normalized mid-keystroke.
   const [subLangText, setSubLangText] = useState(settings?.subtitles.languages.join(', ') ?? '')
 
-  const [extPath, setExtPath] = useState<string | null>(null)
-  const [extError, setExtError] = useState<string | null>(null)
-  const [extCopied, setExtCopied] = useState(false)
+  // Free-text fields keep a local buffer and commit on blur, so typing a space
+  // or clearing the field is never normalized away mid-keystroke.
+  const [ytdlpText, setYtdlpText] = useState(settings?.ytdlpPath ?? '')
+  const [speedText, setSpeedText] = useState(String(settings?.speedLimit.value ?? 5))
+  const [customTemplate, setCustomTemplate] = useState(
+    !!settings && !TEMPLATE_PRESETS.some((p) => p.value === settings.filenameTemplate)
+  )
 
   const [checking, setChecking] = useState(false)
   const [checkResult, setCheckResult] = useState<string | null>(null)
+  const [shortcut, setShortcut] = useState<GlobalShortcutStatus | null>(null)
 
   useEffect(() => {
-    void window.api
-      .getBrowserExtensionPath()
-      .then(setExtPath)
-      .catch((err) => setExtError((err as Error).message || 'Could not inspect the extension folder.'))
-  }, [])
+    void window.api.getGlobalShortcutStatus().then(setShortcut).catch(() => {})
+  }, [settings?.globalShortcutEnabled])
 
   if (!form || !settings) return <div className="screen" />
+
+  const sponsorMode = (category: SponsorBlockCategory): 'keep' | 'mark' | 'cut' =>
+    form.sponsorBlock.remove.includes(category)
+      ? 'cut'
+      : form.sponsorBlock.mark.includes(category)
+        ? 'mark'
+        : 'keep'
+  const setSponsorMode = (category: SponsorBlockCategory, mode: 'keep' | 'mark' | 'cut'): void => {
+    const remove = form.sponsorBlock.remove.filter((c) => c !== category)
+    const mark = form.sponsorBlock.mark.filter((c) => c !== category)
+    if (mode === 'cut') remove.push(category)
+    if (mode === 'mark') mark.push(category)
+    set({ sponsorBlock: { remove, mark } })
+  }
 
   const set = (patch: Partial<Settings>): void => {
     setForm((f) => (f ? { ...f, ...patch } : f))
     updateSettings(patch)
+  }
+
+  const commitYtdlpPath = (): void => {
+    const next = ytdlpText.trim() || null
+    if (next !== form.ytdlpPath) set({ ytdlpPath: next })
+    void refreshTools()
+  }
+
+  const commitSpeedLimit = (): void => {
+    const value = Math.max(1, Math.round(Number(speedText) || form.speedLimit.value))
+    setSpeedText(String(value))
+    if (value !== form.speedLimit.value) set({ speedLimit: { ...form.speedLimit, value } })
+  }
+
+  const commitTemplate = (): void => {
+    if (!form.filenameTemplate.trim()) set({ filenameTemplate: TEMPLATE_PRESETS[0].value })
   }
 
   const audioLangs = form.multiAudio.languages
@@ -123,7 +188,8 @@ export function SettingsScreen(): JSX.Element {
     set({ multiAudio: { ...form.multiAudio, languages: next } })
   }
 
-  const isCustomTemplate = !TEMPLATE_PRESETS.some((p) => p.value === form.filenameTemplate)
+  const isCustomTemplate =
+    customTemplate || !TEMPLATE_PRESETS.some((p) => p.value === form.filenameTemplate)
   const maximumSpeedActive =
     form.parallelDownloads === 1 &&
     form.concurrentFragments === 8 &&
@@ -132,28 +198,6 @@ export function SettingsScreen(): JSX.Element {
   const chooseFolder = async (): Promise<void> => {
     const dir = await window.api.pickFolder(form.defaultSaveDir)
     if (dir) set({ defaultSaveDir: dir })
-  }
-
-  const installExtension = async (): Promise<void> => {
-    setExtError(null)
-    try {
-      const res = await window.api.installBrowserExtension()
-      if (res.ok && res.path) setExtPath(res.path)
-      else setExtError(res.error ?? 'Could not copy the extension files.')
-    } catch (err) {
-      setExtError((err as Error).message || 'Could not copy the extension files.')
-    }
-  }
-
-  const copyExtPath = async (): Promise<void> => {
-    if (!extPath) return
-    try {
-      await navigator.clipboard.writeText(extPath)
-      setExtCopied(true)
-      window.setTimeout(() => setExtCopied(false), 1600)
-    } catch (err) {
-      setExtError((err as Error).message || 'Could not copy the extension path.')
-    }
   }
 
   const checkUpdatesNow = async (): Promise<void> => {
@@ -194,393 +238,696 @@ export function SettingsScreen(): JSX.Element {
     }
   }
 
+  const activeTab = TABS.find((t) => t.id === settingsSection) ?? TABS[0]
+
   return (
     <div className="screen settings">
       <header className="screen-head">
         <h1 className="screen-title">Settings</h1>
-        <p className="screen-desc">Defaults and behavior for every download.</p>
+        <p className="screen-desc">{activeTab.desc}</p>
       </header>
 
-      <Section title="Downloads">
-        <Row
-          title="Maximum speed"
-          desc="Focus on one video with up to 8 parallel fragments when the site supports them"
-        >
+      <nav className="settings-tabs" role="tablist" aria-label="Settings sections">
+        {TABS.map((tab) => (
           <button
-            className={maximumSpeedActive ? 'btn-accent' : 'btn-outline'}
-            onClick={() =>
-              set({
-                parallelDownloads: 1,
-                concurrentFragments: 8,
-                speedLimit: { ...form.speedLimit, enabled: false }
-              })
-            }
+            key={tab.id}
+            role="tab"
+            aria-selected={tab.id === activeTab.id}
+            className={`settings-tab ${tab.id === activeTab.id ? 'active' : ''}`}
+            onClick={() => setSettingsSection(tab.id)}
           >
-            <Icon name={maximumSpeedActive ? 'check' : 'sparkle'} size={15} />
-            {maximumSpeedActive ? 'Active' : 'Use preset'}
+            <Icon name={tab.icon} size={15} />
+            {tab.label}
           </button>
-        </Row>
-        <Row title="Default save folder" desc={form.defaultSaveDir} stacked>
-          <button className="btn-outline" onClick={chooseFolder}>
-            <Icon name="folder" size={15} /> Choose folder
-          </button>
-        </Row>
-        <Row title="Parallel downloads" desc="How many downloads run at once">
-          <Segmented
-            size="sm"
-            options={[
-              { value: '1', label: '1' },
-              { value: '2', label: '2' },
-              { value: '3', label: '3' },
-              { value: '4', label: '4' }
-            ]}
-            value={String(form.parallelDownloads)}
-            onChange={(v) => set({ parallelDownloads: Number(v) })}
-          />
-        </Row>
-        <Row
-          title="Connection boost"
-          desc="Parallel fragments for DASH/HLS downloads — other streams may not get faster"
-        >
-          <Segmented
-            size="sm"
-            options={[
-              { value: '1', label: 'Normal' },
-              { value: '4', label: 'Fast' },
-              { value: '8', label: 'Turbo' },
-              { value: '16', label: 'Max' }
-            ]}
-            value={String(form.concurrentFragments)}
-            onChange={(v) => set({ concurrentFragments: Number(v) })}
-          />
-        </Row>
-        <Row title="Speed limit" desc="Cap total bandwidth so downloads don't hog your connection">
-          <div className="speed-control">
-            <Toggle
-              checked={form.speedLimit.enabled}
-              onChange={(v) => set({ speedLimit: { ...form.speedLimit, enabled: v } })}
-              label="Speed limit"
-            />
-            {form.speedLimit.enabled && (
-              <>
-                <input
-                  className="num-input"
-                  type="number"
-                  min={1}
-                  value={form.speedLimit.value}
-                  onChange={(e) =>
-                    set({
-                      speedLimit: { ...form.speedLimit, value: Math.max(1, Number(e.target.value) || 1) }
-                    })
-                  }
-                />
-                <Segmented
-                  size="sm"
-                  options={[
-                    { value: 'K', label: 'KB/s' },
-                    { value: 'M', label: 'MB/s' }
-                  ]}
-                  value={form.speedLimit.unit}
-                  onChange={(v) => set({ speedLimit: { ...form.speedLimit, unit: v as 'K' | 'M' } })}
-                />
-              </>
-            )}
-          </div>
-        </Row>
-        <Row title="Finished notifications" desc="Get a desktop toast when a download completes">
-          <Toggle
-            checked={form.notificationsEnabled}
-            onChange={(v) => set({ notificationsEnabled: v })}
-            label="Finished notifications"
-          />
-        </Row>
-      </Section>
+        ))}
+      </nav>
 
-      <Section title="File names">
-        <Row title="Naming pattern" stacked>
-          <div className="template-picker">
+      {activeTab.id === 'general' && (
+        <Section>
+          <Row title="Default save folder" desc={form.defaultSaveDir} stacked>
+            <button className="btn-outline" onClick={chooseFolder}>
+              <Icon name="folder" size={15} /> Choose folder
+            </button>
+          </Row>
+          <Row title="Finished notifications" desc="Get a desktop toast when a download completes">
+            <Toggle
+              checked={form.notificationsEnabled}
+              onChange={(v) => set({ notificationsEnabled: v })}
+              label="Finished notifications"
+            />
+          </Row>
+          <Row
+            title="Keep running in background"
+            desc="Stay in the tray when all windows close so downloads keep going"
+          >
+            <Toggle
+              checked={form.runInBackground}
+              onChange={(v) => set({ runInBackground: v })}
+              label="Keep running in background"
+            />
+          </Row>
+          <Row
+            title="Start with Windows"
+            desc="Snag waits in the tray after login, so the quick popup opens instantly"
+          >
+            <Toggle
+              checked={form.launchAtLogin}
+              onChange={(v) => set({ launchAtLogin: v })}
+              label="Start with Windows"
+            />
+          </Row>
+          <Row title="Appearance" desc="Follow Windows, or pick dark or light">
             <Segmented
               size="sm"
               options={[
-                ...TEMPLATE_PRESETS.map((p) => ({ value: p.value, label: p.label })),
-                { value: '__custom__', label: 'Custom' }
+                { value: 'system', label: 'System' },
+                { value: 'dark', label: 'Dark' },
+                { value: 'light', label: 'Light' }
               ]}
-              value={isCustomTemplate ? '__custom__' : form.filenameTemplate}
-              onChange={(v) => {
-                if (v !== '__custom__') set({ filenameTemplate: v })
-                else if (!isCustomTemplate) set({ filenameTemplate: form.filenameTemplate + ' ' })
-              }}
-            />
-            {isCustomTemplate && (
-              <input
-                className="text-input mono"
-                value={form.filenameTemplate}
-                spellCheck={false}
-                onChange={(e) => set({ filenameTemplate: e.target.value })}
-                placeholder="%(title)s"
-              />
-            )}
-            <div className="template-preview">
-              <span className="pv-label">Preview</span>
-              <code>{previewName(form.filenameTemplate)}</code>
-            </div>
-          </div>
-        </Row>
-      </Section>
-
-      <Section title="Format defaults">
-        <Row title="Preferred video container">
-          <Segmented
-            size="sm"
-            options={[
-              { value: 'mp4', label: 'MP4' },
-              { value: 'mkv', label: 'MKV' },
-              { value: 'webm', label: 'WebM' }
-            ]}
-            value={form.preferredVideoContainer}
-            onChange={(v) => set({ preferredVideoContainer: v as VideoContainer })}
-          />
-        </Row>
-        <Row title="Preferred audio format">
-          <div className="select-wrap">
-            <select
-              value={form.preferredAudioFormat}
-              onChange={(e) => set({ preferredAudioFormat: e.target.value as AudioOutputFormat })}
-            >
-              <option value="mp3">MP3</option>
-              <option value="m4a">M4A (AAC)</option>
-              <option value="opus">Opus</option>
-              <option value="wav">WAV</option>
-              <option value="flac">FLAC</option>
-              <option value="best">Original</option>
-            </select>
-            <Icon name="chevron" size={16} />
-          </div>
-        </Row>
-      </Section>
-
-      <Section title="Audio languages">
-        <Row
-          title="Download all my languages"
-          desc="When a video offers multiple audio languages (like YouTube dubs), include every language below as a switchable track in the file"
-        >
-          <Toggle
-            checked={form.multiAudio.enabled}
-            onChange={(v) => set({ multiAudio: { ...form.multiAudio, enabled: v } })}
-            label="Download all my languages"
-          />
-        </Row>
-        <Row
-          title="Preferred languages"
-          desc="Downloaded and merged as switchable tracks whenever a video offers them, in this order."
-          stacked
-        >
-          <div className="sub-lang-chips">
-            {AUDIO_LANGUAGES.map((l) => (
-              <button
-                key={l.code}
-                className={`chip chip-sm ${audioBaseSet.has(l.code) ? 'active' : ''}`}
-                onClick={() => toggleAudioLang(l.code)}
-              >
-                {l.label}
-              </button>
-            ))}
-            {extraAudioLangs.map((l) => (
-              <button
-                key={l}
-                className="chip chip-sm active"
-                onClick={() => toggleAudioLang(l)}
-              >
-                {l.toUpperCase()}
-              </button>
-            ))}
-          </div>
-        </Row>
-      </Section>
-
-      <Section title="Extras">
-        <Row title="Embed cover art in audio" desc="Add the thumbnail as album art (MP3/M4A)">
-          <Toggle
-            checked={form.embedThumbnail}
-            onChange={(v) => set({ embedThumbnail: v })}
-            label="Embed cover art in audio"
-          />
-        </Row>
-        <Row title="Embed metadata" desc="Write title, artist, and date into the file">
-          <Toggle
-            checked={form.embedMetadata}
-            onChange={(v) => set({ embedMetadata: v })}
-            label="Embed metadata"
-          />
-        </Row>
-        <Row title="Subtitles by default" desc="Preselect subtitle download when available">
-          <Toggle
-            checked={form.subtitles.enabled}
-            onChange={(v) => set({ subtitles: { ...form.subtitles, enabled: v } })}
-            label="Subtitles by default"
-          />
-        </Row>
-        {form.subtitles.enabled && (
-          <Row title="Default subtitle languages" desc="Comma-separated codes, e.g. en, es" stacked>
-            <input
-              className="text-input mono"
-              value={subLangText}
-              spellCheck={false}
-              onChange={(e) => setSubLangText(e.target.value)}
-              onBlur={() =>
-                set({
-                  subtitles: {
-                    ...form.subtitles,
-                    languages: subLangText
-                      .split(',')
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                  }
-                })
-              }
-              placeholder="en, es"
+              value={form.theme}
+              onChange={(v) => set({ theme: v as Theme })}
             />
           </Row>
-        )}
-      </Section>
+          <Row
+            title="Watch the clipboard"
+            desc="While Snag is open, a copied link is offered on the Download screen and video links are analyzed ahead of time"
+          >
+            <Toggle
+              checked={form.watchClipboard}
+              onChange={(v) => set({ watchClipboard: v })}
+              label="Watch the clipboard"
+            />
+          </Row>
+          <Row
+            title="Global shortcut"
+            desc={
+              form.globalShortcutEnabled && shortcut && !shortcut.registered
+                ? 'Ctrl+Shift+D is taken by another program; Snag could not claim it'
+                : 'Ctrl+Shift+D anywhere: analyze the link on the clipboard, or bring Snag to the front'
+            }
+          >
+            <Toggle
+              checked={form.globalShortcutEnabled}
+              onChange={(v) => set({ globalShortcutEnabled: v })}
+              label="Global shortcut"
+            />
+          </Row>
+        </Section>
+      )}
 
-      <Section title="Browser integration">
-        <Row title="Handoff from the browser" desc="What a click on the Snag button in Chrome opens">
+      {activeTab.id === 'speed' && (
+        <Section>
+          <Row
+            title="Maximum speed"
+            desc="Focus on one video with up to 8 parallel fragments when the site supports them"
+          >
+            <button
+              className={maximumSpeedActive ? 'btn-accent' : 'btn-outline'}
+              onClick={() =>
+                set({
+                  parallelDownloads: 1,
+                  concurrentFragments: 8,
+                  speedLimit: { ...form.speedLimit, enabled: false }
+                })
+              }
+            >
+              <Icon name={maximumSpeedActive ? 'check' : 'sparkle'} size={15} />
+              {maximumSpeedActive ? 'Active' : 'Use preset'}
+            </button>
+          </Row>
+          <Row title="Parallel downloads" desc="How many downloads run at once">
+            <Segmented
+              size="sm"
+              options={[
+                { value: '1', label: '1' },
+                { value: '2', label: '2' },
+                { value: '3', label: '3' },
+                { value: '4', label: '4' }
+              ]}
+              value={String(form.parallelDownloads)}
+              onChange={(v) => set({ parallelDownloads: Number(v) })}
+            />
+          </Row>
+          <Row
+            title="Connection boost"
+            desc="Parallel fragments for DASH/HLS downloads — other streams may not get faster"
+          >
+            <Segmented
+              size="sm"
+              options={[
+                { value: '1', label: 'Normal' },
+                { value: '4', label: 'Fast' },
+                { value: '8', label: 'Turbo' },
+                { value: '16', label: 'Max' }
+              ]}
+              value={String(form.concurrentFragments)}
+              onChange={(v) => set({ concurrentFragments: Number(v) })}
+            />
+          </Row>
+          <Row title="Speed limit" desc="Cap total bandwidth so downloads don't hog your connection">
+            <div className="speed-control">
+              <Toggle
+                checked={form.speedLimit.enabled}
+                onChange={(v) => set({ speedLimit: { ...form.speedLimit, enabled: v } })}
+                label="Speed limit"
+              />
+              {form.speedLimit.enabled && (
+                <>
+                  <input
+                    className="num-input"
+                    type="number"
+                    min={1}
+                    value={speedText}
+                    onChange={(e) => setSpeedText(e.target.value)}
+                    onBlur={commitSpeedLimit}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                    }}
+                    aria-label="Speed limit value"
+                  />
+                  <Segmented
+                    size="sm"
+                    options={[
+                      { value: 'K', label: 'KB/s' },
+                      { value: 'M', label: 'MB/s' }
+                    ]}
+                    value={form.speedLimit.unit}
+                    onChange={(v) => set({ speedLimit: { ...form.speedLimit, unit: v as 'K' | 'M' } })}
+                  />
+                </>
+              )}
+            </div>
+          </Row>
+        </Section>
+      )}
+
+      {activeTab.id === 'files' && (
+        <>
+          <Section title="File names">
+            <Row title="Naming pattern" stacked>
+              <div className="template-picker">
+                <Segmented
+                  size="sm"
+                  options={[
+                    ...TEMPLATE_PRESETS.map((p) => ({ value: p.value, label: p.label })),
+                    { value: '__custom__', label: 'Custom' }
+                  ]}
+                  value={isCustomTemplate ? '__custom__' : form.filenameTemplate}
+                  onChange={(v) => {
+                    if (v === '__custom__') {
+                      setCustomTemplate(true)
+                    } else {
+                      setCustomTemplate(false)
+                      set({ filenameTemplate: v })
+                    }
+                  }}
+                />
+                {isCustomTemplate && (
+                  <input
+                    className="text-input mono"
+                    value={form.filenameTemplate}
+                    spellCheck={false}
+                    onChange={(e) => set({ filenameTemplate: e.target.value })}
+                    onBlur={commitTemplate}
+                    placeholder="%(title)s"
+                    aria-label="Custom file name pattern"
+                  />
+                )}
+                <div className="template-preview">
+                  <span className="pv-label">Preview</span>
+                  <code>{previewName(form.filenameTemplate)}</code>
+                </div>
+              </div>
+            </Row>
+          </Section>
+
+          <Section title="Formats">
+            <Row title="Preferred video container">
+              <Segmented
+                size="sm"
+                options={[
+                  { value: 'mp4', label: 'MP4' },
+                  { value: 'mkv', label: 'MKV' },
+                  { value: 'webm', label: 'WebM' }
+                ]}
+                value={form.preferredVideoContainer}
+                onChange={(v) => set({ preferredVideoContainer: v as VideoContainer })}
+              />
+            </Row>
+            <Row title="Preferred audio format">
+              <div className="select-wrap">
+                <select
+                  value={form.preferredAudioFormat}
+                  onChange={(e) => set({ preferredAudioFormat: e.target.value as AudioOutputFormat })}
+                >
+                  <option value="mp3">MP3</option>
+                  <option value="m4a">M4A (AAC)</option>
+                  <option value="opus">Opus</option>
+                  <option value="wav">WAV</option>
+                  <option value="flac">FLAC</option>
+                  <option value="best">Original</option>
+                </select>
+                <Icon name="chevron" size={16} />
+              </div>
+            </Row>
+            <Row title="Embed cover art in audio" desc="Add the thumbnail as album art (MP3/M4A)">
+              <Toggle
+                checked={form.embedThumbnail}
+                onChange={(v) => set({ embedThumbnail: v })}
+                label="Embed cover art in audio"
+              />
+            </Row>
+            <Row title="Embed metadata" desc="Write title, artist, and date into the file">
+              <Toggle
+                checked={form.embedMetadata}
+                onChange={(v) => set({ embedMetadata: v })}
+                label="Embed metadata"
+              />
+            </Row>
+          </Section>
+
+          <Section title="SponsorBlock">
+            <Row
+              title="Skip community-marked segments"
+              desc="SponsorBlock crowdsources where sponsors, intros, and similar parts are in YouTube videos. Cut removes a segment from the file; Mark keeps it and adds a chapter so players can skip it."
+              stacked
+            >
+              <div className="sponsor-grid">
+                {SPONSORBLOCK_CATEGORIES.map((category) => (
+                  <div key={category.id} className="sponsor-row">
+                    <div className="set-row-text">
+                      <span className="set-row-title">{category.label}</span>
+                      <span className="set-row-desc">{category.hint}</span>
+                    </div>
+                    <Segmented
+                      size="sm"
+                      options={[
+                        { value: 'keep', label: 'Keep' },
+                        { value: 'mark', label: 'Mark' },
+                        { value: 'cut', label: 'Cut' }
+                      ]}
+                      value={sponsorMode(category.id)}
+                      onChange={(v) => setSponsorMode(category.id, v as 'keep' | 'mark' | 'cut')}
+                    />
+                  </div>
+                ))}
+              </div>
+            </Row>
+          </Section>
+        </>
+      )}
+
+      {activeTab.id === 'languages' && (
+        <>
+          <Section title="Audio languages">
+            <Row
+              title="Download all my languages"
+              desc="When a video offers multiple audio languages (like YouTube dubs), include every language below as a switchable track in the file"
+            >
+              <Toggle
+                checked={form.multiAudio.enabled}
+                onChange={(v) => set({ multiAudio: { ...form.multiAudio, enabled: v } })}
+                label="Download all my languages"
+              />
+            </Row>
+            <Row
+              title="Preferred languages"
+              desc="Downloaded and merged as switchable tracks whenever a video offers them, in this order."
+              stacked
+            >
+              <div className="sub-lang-chips">
+                {AUDIO_LANGUAGES.map((l) => (
+                  <button
+                    key={l.code}
+                    className={`chip chip-sm ${audioBaseSet.has(l.code) ? 'active' : ''}`}
+                    onClick={() => toggleAudioLang(l.code)}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+                {extraAudioLangs.map((l) => (
+                  <button key={l} className="chip chip-sm active" onClick={() => toggleAudioLang(l)}>
+                    {l.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </Row>
+          </Section>
+
+          <Section title="Subtitles">
+            <Row title="Subtitles by default" desc="Preselect subtitle download when available">
+              <Toggle
+                checked={form.subtitles.enabled}
+                onChange={(v) => set({ subtitles: { ...form.subtitles, enabled: v } })}
+                label="Subtitles by default"
+              />
+            </Row>
+            {form.subtitles.enabled && (
+              <Row title="Default subtitle languages" desc="Comma-separated codes, e.g. en, es" stacked>
+                <input
+                  className="text-input mono"
+                  value={subLangText}
+                  spellCheck={false}
+                  onChange={(e) => setSubLangText(e.target.value)}
+                  onBlur={() =>
+                    set({
+                      subtitles: {
+                        ...form.subtitles,
+                        languages: subLangText
+                          .split(',')
+                          .map((s) => s.trim())
+                          .filter(Boolean)
+                      }
+                    })
+                  }
+                  placeholder="en, es"
+                />
+              </Row>
+            )}
+          </Section>
+        </>
+      )}
+
+      {activeTab.id === 'browser' && (
+        <>
+          <Section title="Chrome extension">
+            <Row
+              title="Download button on videos"
+              desc="Adds a Snag button to video players in Chrome, Edge, or Brave, with the quality picker right in the page"
+              stacked
+            >
+              <ExtensionSetup />
+            </Row>
+            <ExtensionAdvanced />
+          </Section>
+          <SignInSection form={form} set={set} />
+
+          <Section title="Handoff">
+            <Row title="Handoff from the browser" desc="What a click on the Snag button in Chrome opens">
+              <Segmented
+                size="sm"
+                options={[
+                  { value: 'quick', label: 'Quick dialog' },
+                  { value: 'main', label: 'Full app' }
+                ]}
+                value={form.browserHandoff}
+                onChange={(v) => set({ browserHandoff: v as BrowserHandoff })}
+              />
+            </Row>
+          </Section>
+        </>
+      )}
+
+      {activeTab.id === 'engine' && (
+        <>
+          <Section title="Engine">
+            <Row
+              title="yt-dlp"
+              desc={
+                toolStatus?.ytdlpFound
+                  ? `${toolStatus.ytdlpVersion ? 'v' + toolStatus.ytdlpVersion : 'found'} · ${shortPath(
+                      toolStatus.ytdlpPath,
+                      44
+                    )}`
+                  : 'Not found on your system'
+              }
+            >
+              <button
+                className="btn-outline"
+                onClick={runUpdate}
+                disabled={updating || !toolStatus?.ytdlpFound}
+              >
+                {updating ? <Spinner size={14} /> : <Icon name="retry" size={14} />}
+                {updating ? 'Updating…' : 'Update'}
+              </button>
+            </Row>
+            {updateOutput && <pre className="update-output">{updateOutput}</pre>}
+            <Row
+              title="ffmpeg"
+              desc={
+                toolStatus?.ffmpegFound
+                  ? shortPath(toolStatus.ffmpegPath, 50)
+                  : 'Not found — needed for merging & audio conversion'
+              }
+            >
+              <span className={`status-pill ${toolStatus?.ffmpegFound ? 'ok' : 'bad'}`}>
+                {toolStatus?.ffmpegFound ? 'Ready' : 'Missing'}
+              </span>
+            </Row>
+            <Row
+              title="Custom yt-dlp path"
+              desc="Override the executable location (leave blank for auto)"
+              stacked
+            >
+              <input
+                className="text-input mono"
+                value={ytdlpText}
+                spellCheck={false}
+                placeholder="auto-detected"
+                onChange={(e) => setYtdlpText(e.target.value)}
+                onBlur={commitYtdlpPath}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                }}
+                aria-label="Custom yt-dlp path"
+              />
+            </Row>
+          </Section>
+
+          <Section title="Updates">
+            <Row
+              title="Check for updates automatically"
+              desc="Look for new Snag and yt-dlp releases about once a day"
+            >
+              <Toggle
+                checked={form.autoCheckUpdates}
+                onChange={(v) => set({ autoCheckUpdates: v })}
+                label="Check for updates automatically"
+              />
+            </Row>
+            <Row
+              title="Update yt-dlp by itself"
+              desc="Sites change weekly; apply yt-dlp releases quietly in the background instead of asking (waits until no download is running)"
+            >
+              <Toggle
+                checked={form.autoUpdateYtdlp}
+                onChange={(v) => set({ autoUpdateYtdlp: v })}
+                label="Update yt-dlp by itself"
+              />
+            </Row>
+            <Row title="Check now" desc={checkResult ?? 'Compare against the latest GitHub releases'}>
+              <button className="btn-outline" onClick={checkUpdatesNow} disabled={checking}>
+                {checking ? <Spinner size={14} /> : <Icon name="retry" size={14} />}
+                {checking ? 'Checking…' : 'Check for updates'}
+              </button>
+            </Row>
+          </Section>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Folder path, manual repair, and the raw heartbeat — hidden behind a
+// disclosure because the one-button setup above covers the normal case.
+function ExtensionAdvanced(): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [status, setStatus] = useState<BrowserExtensionStatus | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const refresh = useCallback(async (): Promise<void> => {
+    try {
+      setStatus(await window.api.getBrowserExtensionStatus())
+    } catch (err) {
+      setError((err as Error).message || 'Could not inspect the extension folder.')
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    let active = true
+    const load = (): void => {
+      if (active) void refresh()
+    }
+    load()
+    const timer = window.setInterval(load, 6000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [open, refresh])
+
+  const repair = async (): Promise<void> => {
+    setError(null)
+    setBusy(true)
+    try {
+      const res = await window.api.installBrowserExtension()
+      if (!res.ok) setError(res.error ?? 'Could not copy the extension files.')
+      await refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const copyPath = async (): Promise<void> => {
+    if (!status?.path) return
+    await window.api.copyText(status.path)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1600)
+  }
+
+  const reveal = async (): Promise<void> => {
+    setError((await window.api.revealBrowserExtensionFolder()) || null)
+  }
+
+  const openPage = async (): Promise<void> => {
+    setError((await window.api.openBrowserExtensionsPage()) || null)
+  }
+
+  return (
+    <div className="set-row stacked">
+      <details className="ext-advanced" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+        <summary>Advanced: extension folder, manual repair, status</summary>
+        <div className="ext-advanced-body">
+          <div className="ext-toolbar">
+            <span
+              className={`status-pill ${status?.live ? 'ok' : status?.detected ? 'warm' : 'neutral'}`}
+              title={status?.lastSeen ? new Date(status.lastSeen).toLocaleString() : undefined}
+            >
+              {status?.live
+                ? 'Connected'
+                : status?.lastSeen
+                  ? `Last seen ${relativeTime(status.lastSeen)}`
+                  : 'Not connected yet'}
+            </span>
+            <button className="btn-outline" onClick={() => void openPage()}>
+              <Icon name="open" size={15} /> Open extensions page
+            </button>
+            <button className="btn-outline" onClick={() => void repair()} disabled={busy}>
+              {busy ? <Spinner size={14} /> : <Icon name="retry" size={15} />}
+              Repair folder
+            </button>
+          </div>
+          {status?.path && (
+            <div className="ext-path-row">
+              <code title={status.path}>{status.path}</code>
+              <button className="btn-mini" onClick={() => void copyPath()}>
+                {copied ? 'Copied!' : 'Copy path'}
+              </button>
+              <button className="btn-mini ghost" onClick={() => void reveal()}>
+                Show folder
+              </button>
+            </div>
+          )}
+          <span className="set-row-desc">
+            Load unpacked this folder in chrome://extensions with Developer mode on. Snag rewrites
+            it on every launch, so a loaded copy never goes stale. The overlay appears on large HTML5
+            videos; browser-internal pages, DRM players, and sites unsupported by yt-dlp may not work.
+          </span>
+          {error && <span className="ext-error">{error}</span>}
+        </div>
+      </details>
+    </div>
+  )
+}
+
+// Signed-in downloads: where yt-dlp gets a logged-in session from.
+function SignInSection({
+  form,
+  set
+}: {
+  form: Settings
+  set: (patch: Partial<Settings>) => void
+}): JSX.Element {
+  const [status, setStatus] = useState<CookieStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const refresh = useCallback(async (): Promise<void> => {
+    try {
+      setStatus(await window.api.getCookieStatus())
+    } catch {
+      /* keep the previous status */
+    }
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 5000)
+    return () => window.clearInterval(timer)
+  }, [refresh, form.cookieSource, form.cookiesFile])
+
+  const chooseFile = async (): Promise<void> => {
+    const file = await window.api.pickCookiesFile()
+    if (file) set({ cookiesFile: file, cookieSource: 'file' })
+  }
+
+  const forget = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      await window.api.forgetCookies()
+      await refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const source = form.cookieSource
+  const hint: Record<CookieSource, string> = {
+    none: 'Downloads run without any login. Age-restricted, members-only, and private videos you can watch in your browser will fail.',
+    extension:
+      'The Snag extension exports your login cookies for YouTube, X, Vimeo, Twitch, Patreon, Reddit, Dailymotion, Instagram, Facebook, and TikTok to Snag every 30 minutes. They are kept in a local file only Snag reads; Forget deletes it.',
+    firefox: 'yt-dlp reads Firefox\u2019s cookie store directly. Close Firefox or keep it open, both work.',
+    file: 'Use a cookies.txt exported with a browser extension such as \u201cGet cookies.txt LOCALLY\u201d.'
+  }
+
+  return (
+    <Section title="Signed-in downloads">
+      <Row
+        title="Use my browser logins"
+        desc="Needed for age-restricted, members-only, private, or subscriber videos"
+        stacked
+      >
+        <div className="signin">
           <Segmented
             size="sm"
             options={[
-              { value: 'quick', label: 'Quick dialog' },
-              { value: 'main', label: 'Full app' }
+              { value: 'none', label: 'Off' },
+              { value: 'extension', label: 'Chrome extension' },
+              { value: 'firefox', label: 'Firefox' },
+              { value: 'file', label: 'cookies.txt' }
             ]}
-            value={form.browserHandoff}
-            onChange={(v) => set({ browserHandoff: v as BrowserHandoff })}
+            value={source}
+            onChange={(v) => set({ cookieSource: v as CookieSource })}
           />
-        </Row>
-        <Row
-          title="Keep running in background"
-          desc="Stay in the tray when all windows close so downloads keep going"
-        >
-          <Toggle
-            checked={form.runInBackground}
-            onChange={(v) => set({ runInBackground: v })}
-            label="Keep running in background"
-          />
-        </Row>
-        <Row
-          title="Start with Windows"
-          desc="Snag waits in the tray after login, so the quick popup opens instantly"
-        >
-          <Toggle
-            checked={form.launchAtLogin}
-            onChange={(v) => set({ launchAtLogin: v })}
-            label="Start with Windows"
-          />
-        </Row>
-        <Row
-          title="Chrome extension"
-          desc="One-time Chrome setup; Snag keeps the extension updated automatically afterward"
-          stacked
-        >
-          <div className="ext-install">
-            <button className="btn-outline" onClick={installExtension}>
-              <Icon name="download" size={15} />
-              {extPath ? 'Repair extension folder' : 'Prepare extension folder'}
-            </button>
-            {extError && <span className="ext-error">{extError}</span>}
-            {extPath && (
-              <div className="ext-steps fade-up">
-                <div className="ext-path-row">
-                  <code title={extPath}>{shortPath(extPath, 52)}</code>
-                  <button className="btn-mini" onClick={copyExtPath}>
-                    {extCopied ? 'Copied!' : 'Copy path'}
-                  </button>
-                </div>
-                <ol>
-                  <li>
-                    Open <code>chrome://extensions</code> in Chrome
-                  </li>
-                  <li>
-                    Turn on <strong>Developer mode</strong> (top-right corner)
-                  </li>
-                  <li>
-                    Click <strong>Load unpacked</strong> once and pick the folder above
-                  </li>
-                  <li>Future Snag updates refresh and reload the extension automatically</li>
-                  <li>
-                    Keep Snag running in the tray so the in-video picker opens instantly
-                  </li>
-                  <li>For this first setup only, reload video tabs that were already open</li>
-                </ol>
-                <span className="set-row-desc">
-                  The overlay appears on large HTML5 videos. Browser-internal pages, DRM players,
-                  and sites unsupported by yt-dlp may not work.
-                </span>
-              </div>
-            )}
-          </div>
-        </Row>
-      </Section>
-
-      <Section title="Engine">
-        <Row
-          title="yt-dlp"
-          desc={
-            toolStatus?.ytdlpFound
-              ? `${toolStatus.ytdlpVersion ? 'v' + toolStatus.ytdlpVersion : 'found'} · ${shortPath(
-                  toolStatus.ytdlpPath,
-                  44
-                )}`
-              : 'Not found on your system'
-          }
-        >
-          <button className="btn-outline" onClick={runUpdate} disabled={updating || !toolStatus?.ytdlpFound}>
-            {updating ? <Spinner size={14} /> : <Icon name="retry" size={14} />}
-            {updating ? 'Updating…' : 'Update'}
-          </button>
-        </Row>
-        {updateOutput && <pre className="update-output">{updateOutput}</pre>}
-        <Row
-          title="ffmpeg"
-          desc={
-            toolStatus?.ffmpegFound
-              ? shortPath(toolStatus.ffmpegPath, 50)
-              : 'Not found — needed for merging & audio conversion'
-          }
-        >
-          <span className={`status-pill ${toolStatus?.ffmpegFound ? 'ok' : 'bad'}`}>
-            {toolStatus?.ffmpegFound ? 'Ready' : 'Missing'}
-          </span>
-        </Row>
-        <Row title="Custom yt-dlp path" desc="Override the executable location (leave blank for auto)" stacked>
-          <input
-            className="text-input mono"
-            value={form.ytdlpPath ?? ''}
-            spellCheck={false}
-            placeholder="auto-detected"
-            onChange={(e) => set({ ytdlpPath: e.target.value.trim() || null })}
-            onBlur={() => refreshTools()}
-          />
-        </Row>
-      </Section>
-
-      <Section title="Updates">
-        <Row
-          title="Check for updates automatically"
-          desc="Look for new Snag and yt-dlp releases about once a day"
-        >
-          <Toggle
-            checked={form.autoCheckUpdates}
-            onChange={(v) => set({ autoCheckUpdates: v })}
-            label="Check for updates automatically"
-          />
-        </Row>
-        <Row title="Check now" desc={checkResult ?? 'Compare against the latest GitHub releases'}>
-          <button className="btn-outline" onClick={checkUpdatesNow} disabled={checking}>
-            {checking ? <Spinner size={14} /> : <Icon name="retry" size={14} />}
-            {checking ? 'Checking…' : 'Check for updates'}
-          </button>
-        </Row>
-      </Section>
-    </div>
+          <span className="set-row-desc">{hint[source]}</span>
+          {source === 'extension' && (
+            <div className="signin-status">
+              <span className={`status-pill ${status?.hasExport ? 'ok' : 'neutral'}`}>
+                {status?.hasExport
+                  ? `Logins exported ${status.syncedAt ? relativeTime(status.syncedAt) : ''}`.trim()
+                  : 'Waiting for the extension\u2019s next check-in (about a minute)'}
+              </span>
+              {status?.hasExport && (
+                <button className="btn-outline" onClick={() => void forget()} disabled={busy}>
+                  {busy ? <Spinner size={14} /> : <Icon name="trash" size={14} />} Forget saved logins
+                </button>
+              )}
+            </div>
+          )}
+          {source === 'file' && (
+            <div className="signin-status">
+              <code className="ext-path-box" title={form.cookiesFile ?? ''}>
+                {form.cookiesFile ?? 'No file chosen yet'}
+              </code>
+              <button className="btn-outline" onClick={() => void chooseFile()}>
+                <Icon name="folder" size={14} /> Choose cookies.txt
+              </button>
+            </div>
+          )}
+        </div>
+      </Row>
+    </Section>
   )
 }

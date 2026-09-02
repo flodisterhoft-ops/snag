@@ -1,6 +1,6 @@
 import { ReactNode, useEffect } from 'react'
 
-type IconName =
+export type IconName =
   | 'download'
   | 'queue'
   | 'settings'
@@ -23,6 +23,10 @@ type IconName =
   | 'heart'
   | 'github'
   | 'share'
+  | 'scissors'
+  | 'play'
+  | 'pause'
+  | 'sun'
 
 const PATHS: Record<IconName, ReactNode> = {
   download: (
@@ -162,6 +166,35 @@ const PATHS: Record<IconName, ReactNode> = {
       <circle cx="18" cy="19" r="3" />
       <path d="m8.6 10.6 6.8-4.2" />
       <path d="m8.6 13.4 6.8 4.2" />
+    </>
+  ),
+  scissors: (
+    <>
+      <circle cx="6" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M20 4 8.1 15.9" />
+      <path d="M14.5 14.5 20 20" />
+      <path d="M8.1 8.1 12 12" />
+    </>
+  ),
+  play: <path d="M7 4v16l13-8z" />,
+  pause: (
+    <>
+      <path d="M8 5v14" />
+      <path d="M16 5v14" />
+    </>
+  ),
+  sun: (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2" />
+      <path d="M12 20v2" />
+      <path d="m4.9 4.9 1.4 1.4" />
+      <path d="m17.7 17.7 1.4 1.4" />
+      <path d="M2 12h2" />
+      <path d="M20 12h2" />
+      <path d="m6.3 17.7-1.4 1.4" />
+      <path d="m19.1 4.9-1.4 1.4" />
     </>
   )
 }

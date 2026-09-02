@@ -1,53 +1,39 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
-import { Icon, Modal, Spinner } from './ui'
+import { Modal } from './ui'
+import { ExtensionSetup } from './ExtensionSetup'
 
+// First-launch prompt: one button installs the Chrome extension. It only
+// appears while no extension has ever reported in, and "Not now" silences it
+// for the rest of this launch regardless of later settings changes.
 export function ExtensionOnboarding(): JSX.Element | null {
   const { ready, settings, updateSettings } = useStore()
   const [open, setOpen] = useState(false)
-  const [checking, setChecking] = useState(false)
-  const [setupPath, setSetupPath] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [snoozed, setSnoozed] = useState(false)
+  const promptDismissed = settings?.browserExtensionPromptDismissed ?? true
 
   useEffect(() => {
-    if (!ready || !settings || settings.browserExtensionPromptDismissed) return
+    if (!ready || promptDismissed || snoozed) return
     let active = true
     const timer = window.setTimeout(() => {
       void window.api.getBrowserExtensionStatus().then((status) => {
         if (active && !status.detected) setOpen(true)
       })
-    }, 5000)
+    }, 4000)
     return () => {
       active = false
       window.clearTimeout(timer)
     }
-  }, [ready, settings])
+  }, [ready, promptDismissed, snoozed])
 
-  useEffect(() => {
-    if (!open) return
-    const timer = window.setInterval(() => {
-      void window.api.getBrowserExtensionStatus().then((status) => {
-        if (status.detected) setOpen(false)
-      })
-    }, 2500)
-    return () => window.clearInterval(timer)
-  }, [open])
+  const snooze = (): void => {
+    setSnoozed(true)
+    setOpen(false)
+  }
 
-  const beginSetup = async (): Promise<void> => {
-    setChecking(true)
-    setError(null)
-    try {
-      const result = await window.api.openBrowserExtensionSetup()
-      if (!result.ok || !result.path) setError(result.error || 'Could not prepare the extension folder.')
-      else {
-        setSetupPath(result.path)
-        if (result.error) setError(result.error)
-      }
-    } catch (err) {
-      setError((err as Error).message || 'Chrome could not be opened.')
-    } finally {
-      setChecking(false)
-    }
+  const finish = (): void => {
+    setSnoozed(true)
+    window.setTimeout(() => setOpen(false), 1800)
   }
 
   const dismissForever = async (): Promise<void> => {
@@ -58,26 +44,20 @@ export function ExtensionOnboarding(): JSX.Element | null {
   if (!settings) return null
 
   return (
-    <Modal open={open} onClose={() => setOpen(false)} title="Add Snag to Chrome" icon="download" size="sm">
+    <Modal open={open} onClose={snooze} title="Add Snag to your browser" icon="download" size="sm">
       <div className="extension-onboarding">
-        <p>Put the Snag download button directly on supported videos. Chrome requires one approval; future updates are automatic.</p>
-        {setupPath ? (
-          <div className="extension-setup-steps">
-            <div><span>1</span> Turn on <strong>Developer mode</strong> in the Chrome page that opened.</div>
-            <div><span>2</span> Click <strong>Load unpacked</strong>.</div>
-            <div><span>3</span> Paste the folder path already copied to your clipboard, then select it.</div>
-            <code title={setupPath}>{setupPath}</code>
-          </div>
-        ) : (
-          <button className="btn-accent extension-setup-primary" onClick={() => void beginSetup()} disabled={checking}>
-            {checking ? <Spinner size={15} /> : <Icon name="open" size={15} />}
-            {checking ? 'Opening Chrome…' : 'Set up Chrome extension'}
-          </button>
-        )}
-        {error && <div className="update-error">{error}</div>}
+        <p>
+          Get a download button right on videos, with the quality picker in the page. One click
+          here, one approval in the browser.
+        </p>
+        <ExtensionSetup compact onConnected={finish} />
         <div className="extension-onboarding-actions">
-          <button className="btn-ghost" onClick={() => setOpen(false)}>Not now</button>
-          <button className="btn-ghost" onClick={() => void dismissForever()}>Don’t show again</button>
+          <button className="btn-ghost" onClick={snooze}>
+            Not now
+          </button>
+          <button className="btn-ghost" onClick={() => void dismissForever()}>
+            Don’t show again
+          </button>
         </div>
       </div>
     </Modal>

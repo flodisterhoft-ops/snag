@@ -1,9 +1,9 @@
-import { app, BrowserWindow, screen, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, screen, shell } from 'electron'
 import { join, normalize, resolve } from 'path'
 import { fileURLToPath } from 'url'
-import type { BrowserHandoff, UpdateAvailability } from '@shared/types'
+import type { BrowserHandoff, SettingsSection, UpdateAvailability } from '@shared/types'
 import { isSafeExternalUrl } from './protocol'
-import { loadSettings } from './settings'
+import { loadSettings, saveSettings } from './settings'
 // Explicit window icon: the running app's taskbar button then never depends on
 // Windows resolving the exe icon (which a stale icon cache can break after
 // in-place upgrades).
@@ -11,7 +11,7 @@ import appIconPath from '../../build/icon.ico?asset'
 
 let mainWindow: BrowserWindow | null = null
 let quickWindow: BrowserWindow | null = null
-const pendingSettingsWindows = new Set<number>()
+const pendingSettingsWindows = new Map<number, SettingsSection>()
 
 // Once quitting starts, the quick window's hide-instead-of-close interception
 // must stand down or app.quit() would be blocked forever.
@@ -78,6 +78,14 @@ function webPreferences(): Electron.WebPreferences {
   }
 }
 
+// Paint the window in the theme's base color before the renderer loads, so a
+// light theme never flashes dark (and vice versa).
+function windowBackground(): string {
+  const theme = loadSettings().theme
+  const dark = theme === 'system' ? nativeTheme.shouldUseDarkColors : theme === 'dark'
+  return dark ? '#0d0e12' : '#f5f6f8'
+}
+
 function loadRenderer(win: BrowserWindow, hash?: string): void {
   const rendererUrl = app.isPackaged ? undefined : process.env['ELECTRON_RENDERER_URL']
   if (rendererUrl) {
@@ -136,7 +144,7 @@ export function createMainWindow(): BrowserWindow {
     minHeight: 620,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#0d0e12',
+    backgroundColor: windowBackground(),
     title: 'Snag',
     icon: appIconPath,
     webPreferences: webPreferences()
@@ -172,28 +180,39 @@ export function ensureMainWindow(): BrowserWindow {
   return mainWindow
 }
 
-export function openSettingsWindow(): void {
+// Show the main window on a Settings tab. A renderer that has not registered
+// its listeners yet picks the request up through consumePendingOpenSettings.
+export function openSettingsWindow(section: SettingsSection = 'general'): void {
   const win = ensureMainWindow()
-  if (win.webContents.isLoading()) pendingSettingsWindows.add(win.webContents.id)
-  else win.webContents.send('openSettings')
+  const id = win.webContents.id
+  if (readyRenderers.has(id)) win.webContents.send('openSettings', section)
+  else pendingSettingsWindows.set(id, section)
 }
 
-export function consumePendingOpenSettings(webContentsId: number): boolean {
-  if (!pendingSettingsWindows.delete(webContentsId)) return false
-  return true
+export function consumePendingOpenSettings(webContentsId: number): SettingsSection | null {
+  const section = pendingSettingsWindows.get(webContentsId) ?? null
+  pendingSettingsWindows.delete(webContentsId)
+  return section
 }
 
 const QUICK_WIDTH = 460
 const QUICK_HEIGHT = 640
+const QUICK_MIN_WIDTH = 380
+const QUICK_MIN_HEIGHT = 480
 const QUICK_MARGIN = 14
+
+function quickWindowSize(): { width: number; height: number } {
+  return loadSettings().quickWindowSize ?? { width: QUICK_WIDTH, height: QUICK_HEIGHT }
+}
 
 // Pin the popup to the top-right of the screen the user is working on — the
 // same corner as the browser's extension buttons that trigger the handoff.
 function positionQuickWindow(win: BrowserWindow): void {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   const area = display.workArea
+  const [width] = win.getSize()
   win.setPosition(
-    Math.round(area.x + area.width - QUICK_WIDTH - QUICK_MARGIN),
+    Math.round(area.x + area.width - width - QUICK_MARGIN),
     Math.round(area.y + QUICK_MARGIN)
   )
 }
@@ -232,16 +251,19 @@ function armQuickIdleTimer(): void {
 }
 
 function createQuickWindow(options: { reveal: boolean }): BrowserWindow {
+  const size = quickWindowSize()
   const win = new BrowserWindow({
-    width: QUICK_WIDTH,
-    height: QUICK_HEIGHT,
-    resizable: false,
+    width: size.width,
+    height: size.height,
+    minWidth: QUICK_MIN_WIDTH,
+    minHeight: QUICK_MIN_HEIGHT,
+    resizable: true,
     frame: false,
     alwaysOnTop: true,
     show: false,
     skipTaskbar: false,
     autoHideMenuBar: true,
-    backgroundColor: '#0d0e12',
+    backgroundColor: windowBackground(),
     title: 'Snag — quick download',
     icon: appIconPath,
     webPreferences: webPreferences()
@@ -249,6 +271,19 @@ function createQuickWindow(options: { reveal: boolean }): BrowserWindow {
 
   quickWindow = win
   positionQuickWindow(win)
+
+  // Remember the size the user drags it to, so the next handoff opens the same way.
+  let sizeTimer: NodeJS.Timeout | null = null
+  win.on('resize', () => {
+    if (!win.isVisible()) return
+    if (sizeTimer) clearTimeout(sizeTimer)
+    sizeTimer = setTimeout(() => {
+      sizeTimer = null
+      if (win.isDestroyed()) return
+      const [width, height] = win.getSize()
+      saveSettings({ quickWindowSize: { width, height } })
+    }, 400)
+  })
   if (options.reveal) {
     win.once('ready-to-show', () => win.show())
   }

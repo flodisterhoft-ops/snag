@@ -172,6 +172,44 @@ async function callSnag(path, options, timeoutMs) {
   }
 }
 
+// Signed-in downloads: when the user enabled "Use my browser logins" in Snag,
+// the app asks (on /ping) for a fresh export and the cookies of these sites are
+// sent over the paired loopback connection. Nothing leaves the machine.
+const COOKIE_DOMAINS = [
+  'youtube.com', 'google.com', 'x.com', 'twitter.com', 'vimeo.com', 'twitch.tv',
+  'patreon.com', 'reddit.com', 'dailymotion.com', 'instagram.com', 'facebook.com', 'tiktok.com'
+]
+
+async function exportCookies(port) {
+  if (!chrome.cookies || typeof chrome.cookies.getAll !== 'function') return
+  const collected = []
+  for (const domain of COOKIE_DOMAINS) {
+    let list = []
+    try {
+      list = await chrome.cookies.getAll({ domain })
+    } catch {
+      continue
+    }
+    for (const c of list) {
+      collected.push({
+        domain: c.domain,
+        path: c.path,
+        name: c.name,
+        value: c.value,
+        secure: !!c.secure,
+        httpOnly: !!c.httpOnly,
+        hostOnly: !!c.hostOnly,
+        expirationDate: typeof c.expirationDate === 'number' ? c.expirationDate : null
+      })
+    }
+  }
+  try {
+    await apiFetch(port, '/cookies', { method: 'POST', body: JSON.stringify({ cookies: collected }) }, 5000)
+  } catch {
+    /* retried on the next heartbeat Snag asks for */
+  }
+}
+
 // Snag refreshes its stable unpacked-extension folder whenever the desktop app
 // starts. After one manual reload installs this code, future app upgrades are
 // detected here and Chrome reloads the extension from that refreshed folder.
@@ -187,6 +225,7 @@ async function reloadForNewAppVersion() {
     const previous = stored.snagObservedAppVersion
     await chrome.storage.local.set({ snagObservedAppVersion: data.version })
     await apiFetch(port, '/extension/heartbeat', { method: 'POST', body: '{}' }, 1200)
+    if (data.cookieSyncWanted === true) await exportCookies(port)
     if (typeof previous === 'string' && previous !== data.version) chrome.runtime.reload()
   } catch {
     /* Snag may be starting or shutting down; the next alarm retries. */
@@ -212,7 +251,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true
   }
   if (message.type === 'snag:open-settings') {
-    callSnag('/open-settings', { method: 'POST', body: '{}' }, 3000).then(sendResponse)
+    const section = typeof message.section === 'string' ? message.section : undefined
+    callSnag('/open-settings', { method: 'POST', body: JSON.stringify({ section }) }, 3000).then(sendResponse)
     return true
   }
   if (message.type === 'snag:analyze') {

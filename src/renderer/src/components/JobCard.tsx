@@ -10,7 +10,8 @@ const STATUS_LABEL: Record<DownloadJob['status'], string> = {
   processing: 'Processing',
   completed: 'Completed',
   error: 'Failed',
-  canceled: 'Canceled'
+  canceled: 'Canceled',
+  paused: 'Paused'
 }
 
 export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
@@ -42,7 +43,7 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
       const error = await window.api.shareFile(job.id)
       if (error) setActionError(error)
     } catch (err) {
-      setActionError((err as Error).message || 'Telegram could not open this file.')
+      setActionError((err as Error).message || 'Windows could not share this file.')
     } finally {
       setTimeout(() => setSharing(false), 2000)
     }
@@ -54,6 +55,10 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
     const result = await deleteJobFile(job.id)
     if (!result.ok) setActionError(result.error || 'Windows could not delete this file.')
   }
+
+  const extras: string[] = []
+  if (job.request.section) extras.push('trimmed')
+  if (job.request.openWhenDone) extras.push('opens when done')
 
   return (
     <div className={`job-card ${status}`}>
@@ -78,16 +83,20 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
           <span className={`job-status ${status}`}>
             {status === 'completed' && <Icon name="check" size={13} />}
             {status === 'error' && <Icon name="alert" size={13} />}
+            {status === 'paused' && <Icon name="pause" size={13} />}
             {STATUS_LABEL[status]}
           </span>
         </div>
 
-        <div className="job-selection">{job.request.selectionLabel}</div>
+        <div className="job-selection">
+          {job.request.selectionLabel}
+          {extras.length > 0 && <span className="job-extras"> · {extras.join(' · ')}</span>}
+        </div>
 
-        {(isActive || status === 'queued') && (
+        {(isActive || status === 'queued' || status === 'paused') && (
           <div className="progress">
             <div
-              className={`progress-bar ${status === 'processing' ? 'indeterminate' : ''}`}
+              className={`progress-bar ${status === 'processing' ? 'indeterminate' : ''} ${status === 'paused' ? 'paused' : ''}`}
               style={{ width: status === 'processing' ? '100%' : `${pct}%` }}
             />
           </div>
@@ -105,6 +114,11 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
           )}
           {status === 'processing' && <span className="job-pct">Merging & finishing…</span>}
           {status === 'queued' && <span className="dim">Waiting in queue…</span>}
+          {status === 'paused' && (
+            <span className="dim">
+              Paused at {pct}% — resume continues where it stopped
+            </span>
+          )}
           {status === 'completed' && job.filepath && (
             <span className="dim" title={job.filepath}>
               {shortPath(job.filepath, 48)}
@@ -118,46 +132,45 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
 
       <div className="job-actions">
         {(isActive || status === 'queued') && (
-          <button className="icon-btn danger" title="Cancel" onClick={() => window.api.cancel(job.id)}>
-            <Icon name="close" size={16} />
-          </button>
+          <>
+            <button className="icon-btn" title="Pause" onClick={() => void window.api.pauseJob(job.id)}>
+              <Icon name="pause" size={16} />
+            </button>
+            <button className="icon-btn danger" title="Cancel" onClick={() => window.api.cancel(job.id)}>
+              <Icon name="close" size={16} />
+            </button>
+          </>
+        )}
+        {status === 'paused' && (
+          <>
+            <button className="icon-btn" title="Resume" onClick={() => void window.api.resumeJob(job.id)}>
+              <Icon name="play" size={16} />
+            </button>
+            <button className="icon-btn danger" title="Cancel" onClick={() => window.api.cancel(job.id)}>
+              <Icon name="close" size={16} />
+            </button>
+          </>
         )}
         {status === 'completed' && (
           <>
             <button
               className="icon-btn"
-              title="Share in Telegram"
+              title="Share (Telegram, or the Windows Share panel)"
               disabled={sharing}
               onClick={() => void shareDownloadedFile()}
             >
               <Icon name="share" size={16} />
             </button>
-            <button
-              className="icon-btn"
-              title="Open file"
-              onClick={() => void openDownloadedPath(false)}
-            >
+            <button className="icon-btn" title="Open file" onClick={() => void openDownloadedPath(false)}>
               <Icon name="open" size={16} />
             </button>
-            <button
-              className="icon-btn"
-              title="Show in folder"
-              onClick={() => void openDownloadedPath(true)}
-            >
+            <button className="icon-btn" title="Show in folder" onClick={() => void openDownloadedPath(true)}>
               <Icon name="folder" size={16} />
             </button>
-            <button
-              className="icon-btn danger"
-              title="Delete file from disk"
-              onClick={() => void deleteDownloadedFile()}
-            >
+            <button className="icon-btn danger" title="Delete file from disk" onClick={() => void deleteDownloadedFile()}>
               <Icon name="trash" size={16} />
             </button>
-            <button
-              className="icon-btn"
-              title="Remove from list only"
-              onClick={() => void removeJob(job.id)}
-            >
+            <button className="icon-btn" title="Remove from list only" onClick={() => void removeJob(job.id)}>
               <Icon name="close" size={16} />
             </button>
           </>
@@ -167,11 +180,7 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
             <button className="icon-btn" title="Retry" onClick={() => window.api.retry(job.id)}>
               <Icon name="retry" size={16} />
             </button>
-            <button
-              className="icon-btn"
-              title="Remove from list"
-              onClick={() => void removeJob(job.id)}
-            >
+            <button className="icon-btn" title="Remove from list" onClick={() => void removeJob(job.id)}>
               <Icon name="trash" size={16} />
             </button>
           </>

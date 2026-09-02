@@ -2,6 +2,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { languageLabel } from '@shared/languages'
 import { YOUTUBE_CLIENT_ARGS } from './args'
+import { AnalysisCache } from './analysisCache'
 import {
   locateYtdlp,
   runYtdlpJson,
@@ -39,6 +40,8 @@ export interface RawFormat {
   filesize?: number | null
   filesize_approx?: number | null
   resolution?: string | null
+  url?: string
+  protocol?: string
 }
 
 interface RawInfo {
@@ -272,6 +275,31 @@ export function parseAudioGroups(
   return { groups, multiLanguage }
 }
 
+// A small, directly playable stream for the in-app trim editor: a muxed MP4
+// up to 480p when the site has one, else the smallest video-only MP4.
+// Manifest-based formats (HLS/DASH) cannot be played by a plain <video>.
+export function pickPreview(formats: RawFormat[]): { url: string | null; hasAudio: boolean } {
+  const direct = formats.filter(
+    (f) =>
+      typeof f.url === 'string' &&
+      /^https?:/i.test(f.url) &&
+      !/m3u8|dash|mhtml|ism/i.test(f.protocol || '') &&
+      f.ext !== 'mhtml' &&
+      !!f.vcodec &&
+      f.vcodec !== 'none'
+  )
+  const bestSmall = (list: RawFormat[]): RawFormat | undefined => {
+    const small = list.filter((f) => (f.height ?? 0) <= 480).sort((a, b) => (b.height ?? 0) - (a.height ?? 0))
+    if (small.length > 0) return small[0]
+    return [...list].sort((a, b) => (a.height ?? 0) - (b.height ?? 0))[0]
+  }
+  const muxed = direct.filter((f) => !!f.acodec && f.acodec !== 'none')
+  const progressive = bestSmall(muxed.filter((f) => f.ext === 'mp4')) ?? bestSmall(muxed)
+  if (progressive?.url) return { url: progressive.url, hasAudio: true }
+  const silent = bestSmall(direct.filter((f) => f.ext === 'mp4'))
+  return silent?.url ? { url: silent.url, hasAudio: false } : { url: null, hasAudio: false }
+}
+
 function parseSubtitles(info: RawInfo): SubtitleLang[] {
   const manual = Object.keys(info.subtitles || {})
   const auto = Object.keys(info.automatic_captions || {})
@@ -300,7 +328,8 @@ const PLAYLIST_RE = /[?&]list=([^&]+)/i
 
 async function getPlaylistInfo(
   url: string,
-  ytdlpOverride?: string | null
+  ytdlpOverride?: string | null,
+  extraArgs: readonly string[] = []
 ): Promise<PlaylistInfo | null> {
   const m = url.match(PLAYLIST_RE)
   if (!m) return null
@@ -315,6 +344,7 @@ async function getPlaylistInfo(
       bin,
       [
         ...ytdlpRuntimeArgs(),
+        ...extraArgs,
         '--flat-playlist',
         '-J',
         '--no-warnings',
@@ -345,21 +375,27 @@ async function getPlaylistInfo(
 
 export async function analyze(
   url: string,
-  ytdlpOverride?: string | null
+  ytdlpOverride?: string | null,
+  extraArgs: readonly string[] = []
 ): Promise<MediaInfo> {
   const trimmed = url.trim()
   if (!trimmed) throw new Error('Please paste a link first.')
 
-  const raw = (await runYtdlpJson(
-    ['-J', '--no-playlist', '--no-warnings', '--ignore-config', ...YOUTUBE_CLIENT_ARGS, trimmed],
-    ytdlpOverride
-  )) as RawInfo
+  // The playlist probe is a second yt-dlp run; start it alongside the main
+  // analysis instead of after it so playlist links do not take twice as long.
+  const [raw, playlist] = await Promise.all([
+    runYtdlpJson(
+      ['-J', '--no-playlist', '--no-warnings', '--ignore-config', ...extraArgs, ...YOUTUBE_CLIENT_ARGS, trimmed],
+      ytdlpOverride
+    ) as Promise<RawInfo>,
+    getPlaylistInfo(trimmed, ytdlpOverride, extraArgs)
+  ])
+  const preview = pickPreview(formats0(raw))
 
   const formats = raw.formats || []
   const videoFormats = parseVideoFormats(formats)
   const { groups, multiLanguage } = parseAudioGroups(formats, raw.language ?? null)
   const subtitleLanguages = parseSubtitles(raw)
-  const playlist = await getPlaylistInfo(trimmed, ytdlpOverride)
 
   return {
     url: raw.webpage_url || raw.original_url || trimmed,
@@ -376,8 +412,33 @@ export async function analyze(
     audioGroups: groups,
     hasMultipleAudioLanguages: multiLanguage,
     subtitleLanguages,
-    playlist
+    playlist,
+    previewUrl: preview.url,
+    previewHasAudio: preview.hasAudio
   }
+}
+
+function formats0(raw: RawInfo): RawFormat[] {
+  return raw.formats || []
+}
+
+// Shared by the app windows and the extension's loopback API, so a hover
+// prefetch from Chrome also makes the quick dialog and the full app instant.
+const analyses = new AnalysisCache<MediaInfo>({ cacheable: (info) => !info.isLive })
+
+export function analyzeCached(
+  url: string,
+  ytdlpOverride?: string | null,
+  extraArgs: readonly string[] = []
+): Promise<MediaInfo> {
+  const key = `${ytdlpOverride ?? ''}\n${extraArgs.join(' ')}\n${url.trim()}`
+  return analyses.get(key, () => analyze(url, ytdlpOverride, extraArgs))
+}
+
+// After a yt-dlp update or a different executable, old results may not
+// reflect what the new binary can extract.
+export function clearAnalysisCache(): void {
+  analyses.clear()
 }
 
 export { cleanYtdlpError }

@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { buildDownloadArgs } from '../src/main/args'
 import type { DownloadRequest, Settings } from '../src/shared/types'
 
-const settings: Settings = {
+vi.mock('electron', () => ({ app: { getPath: () => 'C:\\SnagTest' } }))
+
+import { sanitizeSettings } from '../src/main/settings'
+
+const settings: Settings = sanitizeSettings({
   defaultSaveDir: 'C:\\Downloads',
   speedLimit: { enabled: false, value: 5, unit: 'M' },
   concurrentFragments: 8,
@@ -21,7 +25,7 @@ const settings: Settings = {
   runInBackground: true,
   autoCheckUpdates: true,
   lastUpdateCheck: 0
-}
+})
 
 const request: DownloadRequest = {
   url: 'https://example.com/watch/1',

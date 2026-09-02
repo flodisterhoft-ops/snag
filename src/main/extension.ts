@@ -2,12 +2,15 @@ import { app } from 'electron'
 import { cpSync, existsSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { getLocalApiToken, LOCAL_API_PORTS } from './localApi'
+import { getStorageStatus, sandboxedCopies, toPhysicalPath } from './storage'
 import type { ExtensionInstallResult } from '@shared/types'
 
 // The extension ships inside the app (extraResources in the packaged build,
 // the repo folder in dev). Chrome must load it from a path that survives app
 // updates and doesn't point into the install directory, so "installing" means
 // copying it into userData and letting the user run Load unpacked on that copy.
+
+const EXTENSION_DIR = 'browser-extension'
 
 function bundledExtensionDir(): string {
   return app.isPackaged
@@ -16,21 +19,19 @@ function bundledExtensionDir(): string {
 }
 
 function installDir(): string {
-  return join(app.getPath('userData'), 'browser-extension')
+  return join(app.getPath('userData'), EXTENSION_DIR)
 }
 
+// The folder Chrome can actually open. When Windows redirects this process's
+// AppData into a packaged app's private LocalCache, that is where the files
+// really are — showing the logical path would send the user to an empty or
+// missing folder.
 export function getInstalledExtensionPath(): string | null {
   const dir = installDir()
-  return existsSync(join(dir, 'manifest.json')) ? dir : null
+  return existsSync(join(dir, 'manifest.json')) ? toPhysicalPath(getStorageStatus(), dir) : null
 }
 
-export function installBrowserExtension(): ExtensionInstallResult {
-  const src = bundledExtensionDir()
-  if (!existsSync(join(src, 'manifest.json'))) {
-    return { ok: false, error: 'The bundled extension files were not found.' }
-  }
-
-  const dest = installDir()
+function writeExtensionCopy(src: string, dest: string): void {
   const staging = `${dest}.staging`
   const backup = `${dest}.backup`
   try {
@@ -60,10 +61,42 @@ export function installBrowserExtension(): ExtensionInstallResult {
       throw err
     }
     rmSync(backup, { recursive: true, force: true })
-    return { ok: true, path: dest }
   } catch (err) {
     rmSync(staging, { recursive: true, force: true })
+    throw err
+  }
+}
+
+export function installBrowserExtension(): ExtensionInstallResult {
+  const src = bundledExtensionDir()
+  if (!existsSync(join(src, 'manifest.json'))) {
+    return { ok: false, error: 'The bundled extension files were not found.' }
+  }
+
+  const dest = installDir()
+  try {
+    writeExtensionCopy(src, dest)
+  } catch (err) {
     return { ok: false, error: (err as Error).message }
+  }
+  const storage = getStorageStatus()
+  return { ok: true, path: toPhysicalPath(storage, dest), redirected: storage.redirected }
+}
+
+// Chrome may have been pointed at a copy that an earlier sandboxed run left
+// inside a packaged app's LocalCache. Keep those copies current and paired
+// too, so whichever folder Chrome loaded keeps working after app updates.
+function refreshSandboxedCopies(): void {
+  if (getStorageStatus().redirected) return
+  const src = bundledExtensionDir()
+  for (const copy of sandboxedCopies(app.getPath('userData'))) {
+    const dest = join(copy.path, EXTENSION_DIR)
+    if (!existsSync(join(dest, 'manifest.json'))) continue
+    try {
+      writeExtensionCopy(src, dest)
+    } catch (err) {
+      console.error(`[snag] Could not refresh the extension copy in ${copy.packageFamily}:`, err)
+    }
   }
 }
 
@@ -71,5 +104,6 @@ export function installBrowserExtension(): ExtensionInstallResult {
 // launch. Chrome needs one user-approved Load unpacked action, but never needs
 // the user to copy/refresh these files again afterward.
 export function refreshInstalledBrowserExtension(): ExtensionInstallResult {
+  refreshSandboxedCopies()
   return installBrowserExtension()
 }

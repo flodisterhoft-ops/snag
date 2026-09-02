@@ -45,9 +45,16 @@ A fast, beautiful video & audio downloader for Windows — powered by
 - **Multi-language audio & subtitles.** Set your languages once and Snag embeds every
   one it finds (like YouTube's dubbed tracks) as switchable audio in a single file, or
   pick a single track per download; plus download or embed captions.
-- **Playlists.** Grab a single video or the whole playlist into its own folder.
-- **Stays out of your way.** Runs in the tray, download queue with cancel/retry,
-  desktop notification when done.
+- **Trim before you download.** Pick in and out points in a preview player with
+  frame-level nudges and get only that section, cut precisely.
+- **Signed-in downloads.** Use your browser's logins (via the Snag extension, Firefox,
+  or a cookies.txt) for age-restricted, members-only, and subscriber videos.
+- **SponsorBlock.** Cut or chapter-mark sponsors, intros, outros, and more, per category.
+- **Playlists and batches.** Grab a single video, a whole playlist into its own folder,
+  or paste several links at once.
+- **Stays out of your way.** Runs in the tray, queue with pause/resume, drag reordering,
+  and retry, toasts with Open and Show in folder buttons, a clipboard watch, and a
+  global Ctrl+Shift+D shortcut. yt-dlp keeps itself updated. Dark and light themes.
 - **No ads, no accounts, no telemetry.** Analysis and file processing run on your PC.
   Snag still connects to the URL's site to analyze/download media and, when automatic
   update checks are enabled, to GitHub's release API.
@@ -82,18 +89,17 @@ Click any of them and the quick dialog appears — video analyzed, quality picke
 <img src="docs/quick.png" width="420" alt="Quick download dialog opened from the browser" />
 </div>
 
-**Install as an unpacked extension:** Chrome only auto-installs store extensions, so this
-companion loads in developer mode:
+**Install it with one button:** open Snag, and on first launch (or under
+**Settings → Browser**) click **Install in Chrome** — Snag prepares the extension, copies its
+folder path, and opens your browser's extensions page. Chrome then needs exactly two clicks from
+you, because it only auto-installs Web Store extensions:
 
-1. In Snag: **Settings → Browser integration → Prepare extension folder** (copies the
-   extension to Snag's user-data folder and displays its exact path).
-2. Open `chrome://extensions`, switch on **Developer mode** (top-right).
-3. Click **Load unpacked**.
-4. Paste/navigate to the path shown by Snag, select the folder that directly contains
-   `manifest.json`, and click **Select Folder**.
-5. Reload video tabs that were already open so Chrome injects the newly loaded extension.
-6. First handoff: Chrome asks *"Open Snag?"* — optionally tick **Always allow**, then
-   click **Open Snag**.
+1. Turn on **Developer mode** (top-right corner of the extensions page).
+2. Click **Load unpacked**, paste the path Snag copied for you, and confirm.
+
+Snag's checklist turns green by itself as soon as the extension connects. Reload video tabs that
+were already open so Chrome injects the extension. On the first handoff Chrome asks *"Open
+Snag?"* — optionally tick **Always allow**.
 
 The overlay is translucent until hovered. It appears only over visible, normal HTML5
 `<video>` players at least 250 × 140 pixels and hides in fullscreen. It sends the
@@ -159,6 +165,13 @@ release checker needs GitHub access; an offline check cannot confirm that you ar
 
 **Where are playlists saved?**
 In a subfolder named after the playlist, inside your chosen folder.
+
+**Chrome says the extension folder does not exist, or `snag://` links never open Snag?**
+Snag was probably started from inside another app's sandbox — for example from a terminal
+embedded in an AI assistant or another Microsoft Store app. Windows then keeps that session's
+files in the other app's private folder, which Chrome cannot see. Snag detects this, shows the
+folder Chrome can actually open, and offers **Restart Snag normally**; starting Snag from the
+Start menu or desktop shortcut fixes it for good and carries your settings over.
 
 **Does it work on Mac/Linux?**
 Not yet — Snag is currently Windows-only. The core is Electron, so ports are possible;

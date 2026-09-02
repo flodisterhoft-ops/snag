@@ -9,11 +9,12 @@ import {
   unlinkSync,
   writeFileSync
 } from 'fs'
-import { basename, dirname, join } from 'path'
-import { app } from 'electron'
+import { basename, dirname, extname, join } from 'path'
+import { app, shell } from 'electron'
 import { loadSettings } from './settings'
 import { locateYtdlp, ffmpegDir, cleanYtdlpError, ytdlpChildEnv } from './ytdlp'
 import { buildDownloadArgs, PROGRESS_PREFIX } from './args'
+import { cookieArgs } from './cookies'
 import { notifyComplete, notifyError } from './notify'
 import type { DownloadJob, DownloadRequest, ProgressUpdate } from '@shared/types'
 
@@ -82,6 +83,9 @@ export class DownloadManager extends EventEmitter {
   private queue: string[] = []
   private procs = new Map<string, ChildProcess>()
   private canceled = new Set<string>()
+  // Pause requests in flight: the process is being killed but partial files
+  // stay on disk so yt-dlp can continue them on resume.
+  private paused = new Set<string>()
   private destinations = new Map<string, string[]>()
   private persistenceFile: string | null = null
   private persistTimer: NodeJS.Timeout | null = null
@@ -137,8 +141,10 @@ export class DownloadManager extends EventEmitter {
   cancel(id: string): void {
     const job = this.jobs.get(id)
     if (!job) return
-    if (job.status === 'queued') {
+    if (job.status === 'queued' || job.status === 'paused') {
       this.queue = this.queue.filter((q) => q !== id)
+      this.cleanupPartials(this.destinations.get(id) ?? [])
+      this.destinations.delete(id)
       this.update(id, { status: 'canceled', speed: null, eta: null })
       return
     }
@@ -149,11 +155,55 @@ export class DownloadManager extends EventEmitter {
     }
   }
 
+  // Stop now, keep the partial files; resume() continues where it left off.
+  pause(id: string): void {
+    const job = this.jobs.get(id)
+    if (!job) return
+    if (job.status === 'queued') {
+      this.queue = this.queue.filter((q) => q !== id)
+      this.update(id, { status: 'paused', speed: null, eta: null })
+      return
+    }
+    if (job.status !== 'downloading' && job.status !== 'processing') return
+    const proc = this.procs.get(id)
+    if (proc) {
+      this.paused.add(id)
+      killTree(proc)
+    }
+  }
+
+  resume(id: string): void {
+    const job = this.jobs.get(id)
+    if (!job || job.status !== 'paused') return
+    this.update(id, { status: 'queued', speed: null, eta: null, errorMessage: null })
+    this.queue.push(id)
+    this.pump()
+  }
+
+  // `displayed` is the renderer's list, top to bottom (newest first by
+  // default). Queued jobs start in that order; the stored order is reversed so
+  // a reload shows the same list.
+  reorderJobs(displayed: string[]): void {
+    const known = displayed.filter((id, index) => this.jobs.has(id) && displayed.indexOf(id) === index)
+    if (known.length === 0) return
+    const rest = this.order.filter((id) => !known.includes(id))
+    this.order = [...rest, ...[...known].reverse()]
+    const queued = known.filter((id) => this.jobs.get(id)?.status === 'queued')
+    const missing = this.queue.filter((id) => !queued.includes(id))
+    this.queue = [...queued, ...missing]
+    this.schedulePersistence()
+    this.emit('reordered', this.getJobs())
+  }
+
   retry(id: string): DownloadJob | null {
     const job = this.jobs.get(id)
     if (!job) return null
     if (job.status === 'queued' || job.status === 'downloading' || job.status === 'processing') {
       return job
+    }
+    if (job.status === 'paused') {
+      this.resume(id)
+      return this.jobs.get(id) ?? null
     }
     this.update(id, {
       status: 'queued',
@@ -174,7 +224,7 @@ export class DownloadManager extends EventEmitter {
   removeJob(id: string): void {
     const job = this.jobs.get(id)
     if (!job) return
-    if (job.status === 'downloading' || job.status === 'processing') {
+    if (job.status === 'downloading' || job.status === 'processing' || job.status === 'paused') {
       this.cancel(id)
     }
     this.queue = this.queue.filter((q) => q !== id)
@@ -294,7 +344,8 @@ export class DownloadManager extends EventEmitter {
       sizeLabel: job.sizeLabel,
       itemLabel: job.itemLabel,
       filepath: job.filepath,
-      errorMessage: job.errorMessage
+      errorMessage: job.errorMessage,
+      title: job.request.title
     }
     this.emit('progress', u)
   }
@@ -312,7 +363,8 @@ export class DownloadManager extends EventEmitter {
 
     const args = buildDownloadArgs(job.request, settings, {
       ffmpegLocation: ffmpegDir(),
-      nodeRuntimePath: process.execPath
+      nodeRuntimePath: process.execPath,
+      cookieArgs: cookieArgs(settings)
     })
 
     let child: ChildProcess
@@ -382,11 +434,26 @@ export class DownloadManager extends EventEmitter {
         return
       }
 
+      if (this.paused.has(job.id)) {
+        this.paused.delete(job.id)
+        // Partial files stay; the destination list is kept so a later cancel
+        // can still clean them up.
+        this.update(job.id, { status: 'paused', speed: null, eta: null })
+        this.pump()
+        return
+      }
+
       this.destinations.delete(job.id)
 
       if (code === 0) {
         const path = finalPath || destinations[destinations.length - 1] || null
+        // Batch downloads were queued by URL only; the finished file names them.
+        const request =
+          path && job.request.title === job.request.url
+            ? { ...job.request, title: basename(path, extname(path)) }
+            : job.request
         this.update(job.id, {
+          request,
           status: 'completed',
           progress: 100,
           speed: null,
@@ -395,6 +462,11 @@ export class DownloadManager extends EventEmitter {
           completedAt: Date.now()
         })
         notifyComplete(this.jobs.get(job.id)!, loadSettings().notificationsEnabled)
+        if (job.request.openWhenDone && path && existsSync(path)) {
+          void shell.openPath(path).catch(() => {
+            /* the file is still there; the user can open it from the queue */
+          })
+        }
       } else {
         const msg = cleanYtdlpError(stderrBuf || 'Download failed.')
         this.update(job.id, { status: 'error', errorMessage: msg, speed: null, eta: null })
@@ -515,7 +587,8 @@ export class DownloadManager extends EventEmitter {
       'processing',
       'completed',
       'error',
-      'canceled'
+      'canceled',
+      'paused'
     ])
     for (const raw of rawJobs) {
       if (!raw || typeof raw !== 'object') continue

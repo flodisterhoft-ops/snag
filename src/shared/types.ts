@@ -76,6 +76,19 @@ export interface MediaInfo {
   hasMultipleAudioLanguages: boolean
   subtitleLanguages: SubtitleLang[]
   playlist: PlaylistInfo | null
+  // A small direct stream the trim editor can play in-app; null when the site
+  // only offers manifests or header-bound URLs.
+  previewUrl: string | null
+  previewHasAudio: boolean
+}
+
+// Download only part of a video (seconds). `precise` re-encodes around the
+// cut points so the file starts and ends exactly there instead of at the
+// nearest keyframes.
+export interface DownloadSection {
+  start: number
+  end: number
+  precise: boolean
 }
 
 export interface SubtitleSelection {
@@ -102,6 +115,10 @@ export interface DownloadRequest {
   audioOutputFormat?: AudioOutputFormat
   // playlist
   downloadWholePlaylist?: boolean
+  // trim
+  section?: DownloadSection
+  // launch the finished file in its default app
+  openWhenDone?: boolean
   // common
   saveDir: string
   subtitles?: SubtitleSelection
@@ -115,6 +132,7 @@ export type JobStatus =
   | 'completed'
   | 'error'
   | 'canceled'
+  | 'paused'
 
 export interface DownloadJob {
   id: string
@@ -141,6 +159,9 @@ export interface ProgressUpdate {
   itemLabel?: string | null
   filepath?: string | null
   errorMessage?: string | null
+  // Batch downloads start with the URL as their title and learn the real one
+  // from the finished file.
+  title?: string
 }
 
 export const SPEED_LIMIT_UNITS = ['K', 'M'] as const
@@ -160,6 +181,41 @@ export type BrowserHandoff = (typeof BROWSER_HANDOFFS)[number]
 export interface MultiAudioSettings {
   enabled: boolean
   languages: string[]
+}
+
+// Where yt-dlp gets a signed-in session from. 'extension' = Snag's own Chrome
+// extension exports the cookies of supported sites; 'firefox' = yt-dlp reads
+// Firefox's cookie store; 'file' = a cookies.txt the user exported.
+export const COOKIE_SOURCES = ['none', 'extension', 'firefox', 'file'] as const
+export type CookieSource = (typeof COOKIE_SOURCES)[number]
+
+export const THEMES = ['system', 'dark', 'light'] as const
+export type Theme = (typeof THEMES)[number]
+
+// SponsorBlock segment categories (https://wiki.sponsor.ajay.app/w/Types).
+export const SPONSORBLOCK_CATEGORIES = [
+  { id: 'sponsor', label: 'Sponsor', hint: 'Paid promotions and ads' },
+  { id: 'selfpromo', label: 'Self-promotion', hint: 'Merch, Patreon, own products' },
+  { id: 'interaction', label: 'Interaction reminders', hint: '"Like and subscribe"' },
+  { id: 'intro', label: 'Intro', hint: 'Intermissions and intro animations' },
+  { id: 'outro', label: 'Outro', hint: 'End cards and credits' },
+  { id: 'preview', label: 'Preview / recap', hint: 'Teasers for what comes later' },
+  { id: 'music_offtopic', label: 'Non-music section', hint: 'Talking in music videos' },
+  { id: 'filler', label: 'Filler', hint: 'Tangents and jokes' }
+] as const
+export type SponsorBlockCategory = (typeof SPONSORBLOCK_CATEGORIES)[number]['id']
+
+// Cut = removed from the file; mark = kept, but a chapter marks it.
+export interface SponsorBlockSettings {
+  remove: SponsorBlockCategory[]
+  mark: SponsorBlockCategory[]
+}
+
+export const GLOBAL_SHORTCUT = 'CommandOrControl+Shift+D'
+
+export interface QuickWindowSize {
+  width: number
+  height: number
 }
 
 export interface Settings {
@@ -192,6 +248,34 @@ export interface Settings {
   autoCheckUpdates: boolean
   // Timestamp of the last automatic update check (internal, not shown in UI).
   lastUpdateCheck: number
+  // Apply yt-dlp releases by itself instead of prompting.
+  autoUpdateYtdlp: boolean
+  // Signed-in downloads (see CookieSource).
+  cookieSource: CookieSource
+  cookiesFile: string | null
+  // When the extension last exported cookies (internal).
+  cookiesSyncedAt: number
+  // Offer links copied anywhere while a Snag window is open.
+  watchClipboard: boolean
+  // Ctrl+Shift+D: analyze the clipboard link from anywhere.
+  globalShortcutEnabled: boolean
+  sponsorBlock: SponsorBlockSettings
+  theme: Theme
+  quickWindowSize: QuickWindowSize | null
+  // Remembered "Open when done" choice.
+  openWhenDone: boolean
+}
+
+export interface CookieStatus {
+  source: CookieSource
+  syncedAt: number
+  hasExport: boolean
+  cookiesFile: string | null
+}
+
+export interface GlobalShortcutStatus {
+  accelerator: string
+  registered: boolean
 }
 
 export type UpdateCheckStatus = 'success' | 'partial' | 'error'
@@ -214,8 +298,58 @@ export interface UpdateAvailability {
 
 export interface ExtensionInstallResult {
   ok: boolean
+  // The folder Chrome can open with Load unpacked (always a real, visible path).
   path?: string
+  // True when Windows is redirecting Snag's AppData into a packaged app's
+  // private folder, so this path differs from the one Snag would normally use.
+  redirected?: boolean
   error?: string
+}
+
+// Where Snag's per-user data really lives. Normally logical and physical are
+// the same folder; they differ when a packaged (MSIX) parent app makes
+// Windows redirect this process's AppData and registry writes.
+export interface StorageStatus {
+  redirected: boolean
+  logicalPath: string
+  physicalPath: string
+  packageFamily: string | null
+}
+
+// Tabs of the Settings screen; deep links (extension prompt, sandbox notice)
+// name the one they want opened.
+export const SETTINGS_SECTIONS = ['general', 'speed', 'files', 'languages', 'browser', 'engine'] as const
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
+
+export type BrowserId = 'chrome' | 'edge' | 'brave'
+
+export interface BrowserInfo {
+  id: BrowserId
+  name: string
+  // URL scheme for browser-internal pages (chrome://, edge://, brave://).
+  scheme: string
+}
+
+export interface ExtensionSetupResult {
+  ok: boolean
+  path?: string
+  redirected?: boolean
+  // Browser that was opened for the user; null when none could be found.
+  browser: BrowserInfo | null
+  // 'store': Chrome fetches the extension from the Web Store on its own and
+  // only asks to enable it. 'unpacked': the user completes Load unpacked.
+  mode: 'store' | 'unpacked'
+  error?: string
+}
+
+export interface BrowserExtensionStatus {
+  // Heartbeat seen recently enough to count as installed (about a month).
+  detected: boolean
+  // Heartbeat seen within the last few minutes: the extension is live now.
+  live: boolean
+  lastSeen: number
+  path: string | null
+  redirected: boolean
 }
 
 export interface AnalyzeResult {
@@ -250,18 +384,39 @@ export interface Api {
   getToolStatus: () => Promise<ToolStatus>
   getAppVersion: () => Promise<string>
   updateYtdlp: () => Promise<{ ok: boolean; output: string }>
+  pauseJob: (jobId: string) => Promise<void>
+  resumeJob: (jobId: string) => Promise<void>
+  // Full display order (top to bottom); queued jobs download in that order.
+  reorderJobs: (jobIds: string[]) => Promise<void>
   onProgress: (cb: (u: ProgressUpdate) => void) => () => void
   onJobAdded: (cb: (j: DownloadJob) => void) => () => void
+  // A link copied anywhere while Snag is open (clipboard watch setting).
+  onClipboardUrl: (cb: (url: string) => void) => () => void
+  // yt-dlp was updated in the background; refresh the engine status.
+  onToolsChanged: (cb: () => void) => () => void
+  // Signed-in downloads
+  getCookieStatus: () => Promise<CookieStatus>
+  pickCookiesFile: () => Promise<string | null>
+  forgetCookies: () => Promise<void>
+  getGlobalShortcutStatus: () => Promise<GlobalShortcutStatus>
   // Browser handoff (snag:// deep links)
   consumePendingExternalUrl: () => Promise<string | null>
-  consumePendingOpenSettings: () => Promise<boolean>
+  consumePendingOpenSettings: () => Promise<SettingsSection | null>
   onExternalUrl: (cb: (url: string) => void) => () => void
-  onOpenSettings: (cb: () => void) => () => void
+  onOpenSettings: (cb: (section: SettingsSection) => void) => () => void
   openInMainWindow: (url: string) => Promise<void>
   installBrowserExtension: () => Promise<ExtensionInstallResult>
   getBrowserExtensionPath: () => Promise<string | null>
-  getBrowserExtensionStatus: () => Promise<{ detected: boolean; lastSeen: number; path: string | null }>
-  openBrowserExtensionSetup: () => Promise<ExtensionInstallResult>
+  getBrowserExtensionStatus: () => Promise<BrowserExtensionStatus>
+  // One-button setup: prepares the folder, copies its path, opens the default
+  // Chromium browser's extensions page (or registers a Web Store install).
+  beginExtensionSetup: () => Promise<ExtensionSetupResult>
+  getDefaultBrowser: () => Promise<BrowserInfo | null>
+  openBrowserExtensionsPage: () => Promise<string>
+  revealBrowserExtensionFolder: () => Promise<string>
+  copyText: (text: string) => Promise<void>
+  getStorageStatus: () => Promise<StorageStatus>
+  relaunchOutsideSandbox: () => Promise<boolean>
   deleteJobFile: (jobId: string) => Promise<{ ok: boolean; error?: string }>
   deleteCompletedFiles: () => Promise<{ deletedIds: string[]; errors: string[] }>
   shareFile: (jobId: string) => Promise<string>

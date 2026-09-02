@@ -9,6 +9,10 @@ export function applyProgressUpdate(
     job.id === update.id
       ? {
           ...job,
+          request:
+            update.title && update.title !== job.request.title
+              ? { ...job.request, title: update.title }
+              : job.request,
           status: update.status,
           progress: update.progress,
           speed: update.speed,
@@ -25,6 +29,14 @@ export function applyProgressUpdate(
 
 export function removeJobById(jobs: DownloadJob[], id: string): DownloadJob[] {
   return jobs.filter((job) => job.id !== id)
+}
+
+// Put the jobs in the order the user dragged them into (top to bottom).
+export function reorderJobs(jobs: DownloadJob[], ids: string[]): DownloadJob[] {
+  const byId = new Map(jobs.map((job) => [job.id, job]))
+  const ordered = ids.map((id) => byId.get(id)).filter((job): job is DownloadJob => !!job)
+  const rest = jobs.filter((job) => !ids.includes(job.id))
+  return [...ordered, ...rest]
 }
 
 export function removeFinishedJobs(jobs: DownloadJob[]): DownloadJob[] {

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { DownloadRequest, MediaInfo } from '@shared/types'
+import type { DownloadKind, DownloadRequest, DownloadSection, MediaInfo } from '@shared/types'
 import { useStore } from '../store'
-import { Icon, Spinner, Toggle } from '../components/ui'
+import { Icon, Segmented, Spinner, Toggle } from '../components/ui'
 import { MediaCard } from '../components/MediaCard'
 import { FormatPicker, FormatSelection } from '../components/FormatPicker'
-import { looksLikeUrl, shortPath } from '../lib/format'
+import { TrimEditor } from '../components/TrimEditor'
+import { extractUrls, looksLikeUrl, shortPath } from '../lib/format'
 
 export function Home(): JSX.Element {
   const { settings, updateSettings, setView, handoff, clearHandoffUrl } = useStore()
@@ -14,12 +15,21 @@ export function Home(): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<MediaInfo | null>(null)
   const [selection, setSelection] = useState<FormatSelection | null>(null)
+  const [section, setSection] = useState<DownloadSection | null>(null)
   const [saveDir, setSaveDir] = useState('')
   const [wholePlaylist, setWholePlaylist] = useState(false)
+  const [openWhenDone, setOpenWhenDone] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [clip, setClip] = useState<string | null>(null)
   const [dismissedClip, setDismissedClip] = useState<string | null>(null)
+  // Several links pasted at once: queue them all with the defaults.
+  const [batch, setBatch] = useState<string[] | null>(null)
+  const [batchKind, setBatchKind] = useState<DownloadKind>('video')
+  const [batchSubmitting, setBatchSubmitting] = useState(false)
   const analyzeSequence = useRef(0)
+  const saveDirOverridden = useRef(false)
+  const urlRef = useRef(url)
+  urlRef.current = url
 
   const [subsEnabled, setSubsEnabled] = useState(false)
   const [subLangs, setSubLangs] = useState<string[]>([])
@@ -29,10 +39,14 @@ export function Home(): JSX.Element {
     analyzeSequence.current += 1
   }, [])
 
+  // Follow the default folder from Settings until the user picks one here.
   useEffect(() => {
-    if (settings && !saveDir) setSaveDir(settings.defaultSaveDir)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (settings && !saveDirOverridden.current) setSaveDir(settings.defaultSaveDir)
   }, [settings])
+
+  useEffect(() => {
+    if (settings) setOpenWhenDone(settings.openWhenDone)
+  }, [settings?.openWhenDone, settings])
 
   // A link handed off from the browser (snag://) starts analyzing immediately.
   // Keyed on the handoff seq, not the URL, so repeated clicks on the same link
@@ -63,16 +77,33 @@ export function Home(): JSX.Element {
     return () => window.removeEventListener('focus', onFocus)
   }, [checkClipboard])
 
+  // Links copied anywhere while Snag is open (main-process clipboard watch).
+  useEffect(() => {
+    return window.api.onClipboardUrl((copied) => {
+      if (copied !== urlRef.current.trim()) {
+        setDismissedClip(null)
+        setClip(copied)
+      }
+    })
+  }, [])
+
   const runAnalyze = async (target?: string): Promise<void> => {
     const u = (target ?? url).trim()
     if (!u) return
+    const many = extractUrls(u)
+    if (many.length >= 2) {
+      startBatch(many)
+      return
+    }
     const requestId = ++analyzeSequence.current
+    setBatch(null)
     setUrl(u)
     setClip(null)
     setAnalyzing(true)
     setError(null)
     setInfo(null)
     setSelection(null)
+    setSection(null)
     setWholePlaylist(false)
     try {
       const res = await window.api.analyze(u)
@@ -98,23 +129,49 @@ export function Home(): JSX.Element {
     }
   }
 
+  const startBatch = (urls: string[]): void => {
+    analyzeSequence.current += 1
+    setAnalyzing(false)
+    setInfo(null)
+    setSelection(null)
+    setSection(null)
+    setError(null)
+    setClip(null)
+    setUrl('')
+    setBatch([...new Set(urls)])
+  }
+
   const pasteInput = async (): Promise<void> => {
     const t = (await window.api.readClipboard()).trim()
-    if (t) {
-      setUrl(t)
-      setClip(null)
+    if (!t) return
+    const many = extractUrls(t)
+    if (many.length >= 2) {
+      startBatch(many)
+      return
     }
+    setUrl(t)
+    setClip(null)
   }
 
   const changeFolder = async (): Promise<void> => {
     const dir = await window.api.pickFolder(saveDir)
-    if (dir) setSaveDir(dir)
+    if (dir) {
+      saveDirOverridden.current = true
+      setSaveDir(dir)
+    }
   }
 
   const toggleSubLang = (code: string): void => {
     setSubLangs((prev) =>
       prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
     )
+  }
+
+  const rememberOpenWhenDone = (value: boolean): void => {
+    setOpenWhenDone(value)
+    if (settings && settings.openWhenDone !== value) {
+      void updateSettings({ openWhenDone: value }).catch(() => {})
+    }
   }
 
   const startDownload = async (): Promise<void> => {
@@ -130,16 +187,19 @@ export function Home(): JSX.Element {
       kind: selection.kind,
       videoFormatId: selection.videoFormatId,
       audioFormatId: selection.audioFormatId,
+      audioFormatIds: selection.audioFormatIds,
       mergeContainer: selection.mergeContainer,
       audioLanguage: selection.audioLanguage,
       audioOutputFormat: selection.audioOutputFormat,
       downloadWholePlaylist: wholePlaylist,
+      section: section && !wholePlaylist ? section : undefined,
+      openWhenDone: openWhenDone || undefined,
       saveDir,
       subtitles:
         subsEnabled && subLangs.length
           ? { enabled: true, languages: subLangs, embed: subEmbed, autoGenerated }
           : undefined,
-      selectionLabel: selection.selectionLabel
+      selectionLabel: selection.selectionLabel + (section && !wholePlaylist ? ' · trimmed' : '')
     }
     setSubmitting(true)
     setError(null)
@@ -157,12 +217,48 @@ export function Home(): JSX.Element {
       setInfo(null)
       setUrl('')
       setSelection(null)
+      setSection(null)
       setError(null)
       setView('queue')
     } catch (err) {
       setError((err as Error).message || 'Could not add this download. Please try again.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const startBatchDownload = async (): Promise<void> => {
+    if (!batch || batch.length === 0 || !settings || !saveDir || batchSubmitting) return
+    setBatchSubmitting(true)
+    setError(null)
+    const container = settings.preferredVideoContainer
+    const audioFormat = settings.preferredAudioFormat
+    try {
+      for (const link of batch) {
+        await window.api.enqueue({
+          url: link,
+          // The finished file names the job once yt-dlp knows the title.
+          title: link,
+          thumbnail: null,
+          kind: batchKind,
+          mergeContainer: batchKind === 'video' ? container : undefined,
+          audioOutputFormat: batchKind === 'audio' ? audioFormat : undefined,
+          openWhenDone: openWhenDone || undefined,
+          saveDir,
+          selectionLabel:
+            batchKind === 'video'
+              ? `Best · ${container.toUpperCase()}`
+              : audioFormat === 'best'
+                ? 'Original audio'
+                : audioFormat.toUpperCase()
+        })
+      }
+      setBatch(null)
+      setView('queue')
+    } catch (err) {
+      setError((err as Error).message || 'Could not add these downloads. Please try again.')
+    } finally {
+      setBatchSubmitting(false)
     }
   }
 
@@ -173,7 +269,8 @@ export function Home(): JSX.Element {
       <header className="screen-head">
         <h1 className="screen-title">Grab a video</h1>
         <p className="screen-desc">
-          Paste a link from YouTube, Vimeo, TikTok, X, and 1000+ other sites.
+          Paste a link from YouTube, Vimeo, TikTok, X, and 1000+ other sites — or several links at
+          once.
         </p>
       </header>
 
@@ -188,6 +285,16 @@ export function Home(): JSX.Element {
           spellCheck={false}
           autoFocus
           onChange={(e) => setUrl(e.target.value)}
+          onPaste={(e) => {
+            // A multi-line paste into a single-line field would glue the links
+            // together; intercept it and start a batch instead.
+            const text = e.clipboardData.getData('text')
+            const many = extractUrls(text)
+            if (many.length >= 2) {
+              e.preventDefault()
+              startBatch(many)
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !analyzing) void runAnalyze()
           }}
@@ -201,7 +308,7 @@ export function Home(): JSX.Element {
         </button>
       </div>
 
-      {clip && (
+      {clip && !batch && (
         <div className="clip-suggest fade-up">
           <Icon name="paste" size={15} />
           <span className="clip-text">Detected a link on your clipboard</span>
@@ -228,6 +335,75 @@ export function Home(): JSX.Element {
         </div>
       )}
 
+      {batch && (
+        <div className="batch fade-up">
+          <div className="batch-head">
+            <div>
+              <span className="option-title">
+                <Icon name="queue" size={15} /> {batch.length} links ready to queue
+              </span>
+              <span className="option-sub">
+                Each is downloaded in the best quality with your defaults; titles appear as the
+                files are named.
+              </span>
+            </div>
+            <Segmented
+              size="sm"
+              options={[
+                { value: 'video', label: 'Video' },
+                { value: 'audio', label: 'Audio' }
+              ]}
+              value={batchKind}
+              onChange={setBatchKind}
+            />
+          </div>
+          <ul className="batch-list">
+            {batch.map((link) => (
+              <li key={link}>
+                <code>{link}</code>
+                <button
+                  className="icon-btn"
+                  title="Remove from this batch"
+                  onClick={() => setBatch((prev) => (prev ? prev.filter((l) => l !== link) : prev))}
+                >
+                  <Icon name="close" size={14} />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="save-row">
+            <button className="folder-pick" onClick={changeFolder}>
+              <Icon name="folder" size={17} />
+              <div className="folder-info">
+                <span className="folder-label">Save to</span>
+                <span className="folder-path" title={saveDir}>
+                  {shortPath(saveDir, 50)}
+                </span>
+              </div>
+              <span className="folder-change">Change</span>
+            </button>
+            <button
+              className="btn-accent btn-download"
+              onClick={() => void startBatchDownload()}
+              disabled={batch.length === 0 || batchSubmitting}
+            >
+              {batchSubmitting ? <Spinner size={17} /> : <Icon name="download" size={18} />}
+              <span className="btn-download-label">
+                {batchSubmitting ? 'Adding…' : `Download all ${batch.length}`}
+                <span className="btn-download-sub">
+                  {batchKind === 'video'
+                    ? `Best · ${settings?.preferredVideoContainer.toUpperCase() ?? 'MP4'}`
+                    : 'Audio only'}
+                </span>
+              </span>
+            </button>
+          </div>
+          <button className="btn-ghost batch-cancel" onClick={() => setBatch(null)}>
+            Cancel
+          </button>
+        </div>
+      )}
+
       {analyzing && !info && (
         <div className="analyzing-skeleton fade-up">
           <div className="skel-thumb shimmer" />
@@ -245,6 +421,10 @@ export function Home(): JSX.Element {
 
           {settings && <FormatPicker info={info} settings={settings} onChange={setSelection} />}
 
+          {!info.isLive && !wholePlaylist && (
+            <TrimEditor info={info} section={section} onChange={setSection} />
+          )}
+
           {info.playlist && (
             <label className="option-row fade-up">
               <div className="option-main">
@@ -256,7 +436,10 @@ export function Home(): JSX.Element {
               </div>
               <Toggle
                 checked={wholePlaylist}
-                onChange={setWholePlaylist}
+                onChange={(v) => {
+                  setWholePlaylist(v)
+                  if (v) setSection(null)
+                }}
                 label="Download entire playlist"
               />
             </label>
@@ -304,6 +487,16 @@ export function Home(): JSX.Element {
             </div>
           )}
 
+          <label className="option-row fade-up">
+            <div className="option-main">
+              <span className="option-title">
+                <Icon name="open" size={15} /> Open when done
+              </span>
+              <span className="option-sub">Launch the finished file in its default app</span>
+            </div>
+            <Toggle checked={openWhenDone} onChange={rememberOpenWhenDone} label="Open when done" />
+          </label>
+
           <div className="save-row fade-up">
             <button className="folder-pick" onClick={changeFolder}>
               <Icon name="folder" size={17} />
@@ -319,7 +512,7 @@ export function Home(): JSX.Element {
             <button className="btn-accent btn-download" onClick={startDownload} disabled={!canDownload}>
               {submitting ? <Spinner size={17} /> : <Icon name="download" size={18} />}
               <span className="btn-download-label">
-                {submitting ? 'Adding…' : 'Download'}
+                {submitting ? 'Adding…' : section ? 'Download section' : 'Download'}
                 {selection?.selectionLabel && (
                   <span className="btn-download-sub">{selection.selectionLabel}</span>
                 )}

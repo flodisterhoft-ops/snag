@@ -22,11 +22,21 @@ export function QuickApp(): JSX.Element {
   const closeTimer = useRef<number | null>(null)
   const analysisRequest = useRef(0)
   const submittingRef = useRef(false)
+  const saveDirOverridden = useRef(false)
 
+  // Follow the default folder from Settings until the user picks one here.
   useEffect(() => {
-    if (settings && !saveDir) setSaveDir(settings.defaultSaveDir)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (settings && !saveDirOverridden.current) setSaveDir(settings.defaultSaveDir)
   }, [settings])
+
+  // The popup has no frame, so Esc is the keyboard way to dismiss it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') window.close()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // Keyed on the handoff seq, not the URL, so repeated clicks on the same link
   // each re-fire instead of collapsing on string equality.
@@ -95,7 +105,10 @@ export function QuickApp(): JSX.Element {
 
   const changeFolder = async (): Promise<void> => {
     const dir = await window.api.pickFolder(saveDir)
-    if (dir) setSaveDir(dir)
+    if (dir) {
+      saveDirOverridden.current = true
+      setSaveDir(dir)
+    }
   }
 
   const openFullApp = async (): Promise<void> => {

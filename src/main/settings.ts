@@ -4,11 +4,14 @@ import { join, dirname } from 'path'
 import {
   AUDIO_OUTPUT_FORMATS,
   BROWSER_HANDOFFS,
+  COOKIE_SOURCES,
   DOWNLOAD_KINDS,
   SPEED_LIMIT_UNITS,
+  SPONSORBLOCK_CATEGORIES,
+  THEMES,
   VIDEO_CONTAINERS
 } from '@shared/types'
-import type { Settings } from '@shared/types'
+import type { Settings, SponsorBlockCategory } from '@shared/types'
 
 function defaultSettings(): Settings {
   let downloads: string
@@ -42,8 +45,31 @@ function defaultSettings(): Settings {
     // Pickers still fall back to the video's default/English track.
     multiAudio: { enabled: false, languages: [] },
     autoCheckUpdates: true,
-    lastUpdateCheck: 0
+    lastUpdateCheck: 0,
+    autoUpdateYtdlp: true,
+    cookieSource: 'none',
+    cookiesFile: null,
+    cookiesSyncedAt: 0,
+    watchClipboard: true,
+    globalShortcutEnabled: true,
+    sponsorBlock: { remove: [], mark: [] },
+    theme: 'system',
+    quickWindowSize: null,
+    openWhenDone: false
   }
+}
+
+const SPONSORBLOCK_IDS: readonly string[] = SPONSORBLOCK_CATEGORIES.map((c) => c.id)
+
+function pickCategories(value: unknown): SponsorBlockCategory[] {
+  if (!Array.isArray(value)) return []
+  const picked: SponsorBlockCategory[] = []
+  for (const item of value) {
+    if (typeof item === 'string' && SPONSORBLOCK_IDS.includes(item) && !picked.includes(item as SponsorBlockCategory)) {
+      picked.push(item as SponsorBlockCategory)
+    }
+  }
+  return picked
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -84,6 +110,9 @@ export function sanitizeSettings(raw: unknown): Settings {
   const speedLimit = isRecord(raw.speedLimit) ? raw.speedLimit : {}
   const subtitles = isRecord(raw.subtitles) ? raw.subtitles : {}
   const multiAudio = isRecord(raw.multiAudio) ? raw.multiAudio : {}
+  const sponsorBlock = isRecord(raw.sponsorBlock) ? raw.sponsorBlock : {}
+  const quick = isRecord(raw.quickWindowSize) ? raw.quickWindowSize : null
+  const remove = pickCategories(sponsorBlock.remove)
 
   return {
     defaultSaveDir: pickString(raw.defaultSaveDir, defaults.defaultSaveDir),
@@ -146,7 +175,26 @@ export function sanitizeSettings(raw: unknown): Settings {
       0,
       Number.MAX_SAFE_INTEGER,
       defaults.lastUpdateCheck
-    )
+    ),
+    autoUpdateYtdlp: pickBoolean(raw.autoUpdateYtdlp, defaults.autoUpdateYtdlp),
+    cookieSource: pickEnum(raw.cookieSource, COOKIE_SOURCES, defaults.cookieSource),
+    cookiesFile: typeof raw.cookiesFile === 'string' && raw.cookiesFile.length > 0 ? raw.cookiesFile : null,
+    cookiesSyncedAt: clampNumber(raw.cookiesSyncedAt, 0, Number.MAX_SAFE_INTEGER, 0),
+    watchClipboard: pickBoolean(raw.watchClipboard, defaults.watchClipboard),
+    globalShortcutEnabled: pickBoolean(raw.globalShortcutEnabled, defaults.globalShortcutEnabled),
+    sponsorBlock: {
+      remove,
+      // A category is either cut or marked, never both.
+      mark: pickCategories(sponsorBlock.mark).filter((c) => !remove.includes(c))
+    },
+    theme: pickEnum(raw.theme, THEMES, defaults.theme),
+    quickWindowSize: quick
+      ? {
+          width: Math.round(clampNumber(quick.width, 380, 1600, 460)),
+          height: Math.round(clampNumber(quick.height, 480, 1600, 640))
+        }
+      : null,
+    openWhenDone: pickBoolean(raw.openWhenDone, defaults.openWhenDone)
   }
 }
 
@@ -163,7 +211,8 @@ function merge(base: Settings, stored: Partial<Settings>): Settings {
     ...stored,
     speedLimit: { ...base.speedLimit, ...(stored.speedLimit || {}) },
     subtitles: { ...base.subtitles, ...(stored.subtitles || {}) },
-    multiAudio: { ...base.multiAudio, ...(stored.multiAudio || {}) }
+    multiAudio: { ...base.multiAudio, ...(stored.multiAudio || {}) },
+    sponsorBlock: { ...base.sponsorBlock, ...(stored.sponsorBlock || {}) }
   }
 }
 
@@ -180,7 +229,9 @@ export function loadSettings(): Settings {
 
 export function saveSettings(patch: Partial<Settings>): Settings {
   const current = loadSettings()
-  const next = merge(current, patch)
+  // Re-validate after merging so a malformed patch (from any caller) can
+  // never persist out-of-range or wrong-typed values.
+  const next = sanitizeSettings(merge(current, patch))
   cache = next
   try {
     const p = filePath()

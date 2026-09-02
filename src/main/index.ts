@@ -1,7 +1,8 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, globalShortcut, nativeTheme, shell } from 'electron'
+import { existsSync } from 'fs'
 import { resolve } from 'path'
 import { registerIpc } from './ipc'
-import { deepLinkFromArgv, parseDeepLink, PROTOCOL_SCHEME } from './protocol'
+import { deepLinkActionFromArgv, parseDeepLinkAction, PROTOCOL_SCHEME, type DeepLink } from './protocol'
 import {
   ensureMainWindow,
   deliverExternalUrl,
@@ -17,6 +18,12 @@ import { checkForUpdates, shouldAutoCheck } from './updates'
 import { refreshInstalledBrowserExtension } from './extension'
 import { applyLaunchAtLogin, TRAY_START_FLAG } from './startup'
 import { startLocalApi } from './localApi'
+import { getStorageStatus, importSandboxedUserData } from './storage'
+import { applyGlobalShortcut } from './shortcuts'
+import { startClipboardWatcher } from './clipboardWatcher'
+import { updateYtdlp, resetToolCache } from './ytdlp'
+import { clearAnalysisCache } from './metadata'
+import { notifyInfo } from './notify'
 
 // Windows: needed for notifications to show the app identity/name correctly.
 if (process.platform === 'win32') {
@@ -37,20 +44,36 @@ if (process.defaultApp) {
   app.setAsDefaultProtocolClient(PROTOCOL_SCHEME, executable)
 }
 
-function routeDeepLink(url: string): void {
-  console.log('[snag] browser handoff:', url)
-  deliverExternalUrl(url, loadSettings().browserHandoff)
+// Buttons on Snag's own Windows toasts come back as snag://job links. Only a
+// job Snag itself finished may be opened, never an arbitrary path.
+function openJobFile(id: string, action: 'open' | 'reveal'): void {
+  const job = downloadManager.getJob(id)
+  if (!job || job.status !== 'completed' || !job.filepath || !existsSync(job.filepath)) {
+    ensureMainWindow()
+    return
+  }
+  if (action === 'reveal') shell.showItemInFolder(job.filepath)
+  else void shell.openPath(job.filepath)
+}
+
+function routeDeepLink(link: DeepLink): void {
+  if (link.kind === 'job') {
+    openJobFile(link.id, link.action)
+    return
+  }
+  console.log('[snag] browser handoff:', link.url)
+  deliverExternalUrl(link.url, loadSettings().browserHandoff)
 }
 
 // macOS delivers custom protocols through open-url rather than argv. Queue an
 // early event until BrowserWindow creation is legal.
-const pendingOpenUrls: string[] = []
+const pendingOpenUrls: DeepLink[] = []
 app.on('open-url', (event, rawUrl) => {
   event.preventDefault()
-  const url = parseDeepLink(rawUrl)
-  if (!url) return
-  if (app.isReady()) routeDeepLink(url)
-  else pendingOpenUrls.push(url)
+  const link = parseDeepLinkAction(rawUrl)
+  if (!link) return
+  if (app.isReady()) routeDeepLink(link)
+  else pendingOpenUrls.push(link)
 })
 
 // Quit once the last download finishes if the user closed all windows and
@@ -73,17 +96,34 @@ if (!gotLock) {
   // A second launch either carries a snag:// link (browser handoff) or is the
   // user starting the app again — surface the right window for each.
   app.on('second-instance', (_e, argv) => {
-    const url = deepLinkFromArgv(argv)
-    if (url) routeDeepLink(url)
+    const link = deepLinkActionFromArgv(argv)
+    if (link) routeDeepLink(link)
     else ensureMainWindow()
   })
 
   app.whenReady().then(() => {
+    // Find out where this process's files really go before anything reads or
+    // writes userData. A normal start also rescues what an earlier sandboxed
+    // run (Snag launched from inside a packaged app) left in that app's
+    // private folder, so the user keeps their settings and pairing token.
+    const storage = getStorageStatus()
+    if (storage.redirected) {
+      console.warn(
+        `[snag] AppData writes are redirected by packaged app ${storage.packageFamily}; files land in ${storage.physicalPath}`
+      )
+    } else {
+      const imported = importSandboxedUserData(app.getPath('userData'))
+      if (imported.length > 0) console.log('[snag] Imported from a sandboxed run:', imported.join(', '))
+    }
+
     downloadManager.initializePersistence()
+    nativeTheme.themeSource = loadSettings().theme
     registerIpc()
     createTray(() => ensureMainWindow())
     setWindowIdleProbe(maybeQuitWhenIdle)
     void startLocalApi()
+    applyGlobalShortcut(loadSettings().globalShortcutEnabled)
+    startClipboardWatcher()
 
     // Heal the login-item registration (a moved portable exe changes paths).
     applyLaunchAtLogin(loadSettings().launchAtLogin)
@@ -109,11 +149,11 @@ if (!gotLock) {
     // Cold start via a protocol click opens only the window the handoff needs.
     // A login-item start stays in the tray entirely (no window at all).
     const trayStart = process.argv.includes(TRAY_START_FLAG)
-    const coldUrl = deepLinkFromArgv(process.argv)
-    if (coldUrl) routeDeepLink(coldUrl)
+    const coldLink = deepLinkActionFromArgv(process.argv)
+    if (coldLink) routeDeepLink(coldLink)
     const queuedOpenUrls = pendingOpenUrls.splice(0)
-    for (const url of queuedOpenUrls) routeDeepLink(url)
-    if (!coldUrl && queuedOpenUrls.length === 0 && !trayStart) ensureMainWindow()
+    for (const link of queuedOpenUrls) routeDeepLink(link)
+    if (!coldLink && queuedOpenUrls.length === 0 && !trayStart) ensureMainWindow()
 
     // Load the quick popup invisibly once startup work settles, so the first
     // browser handoff appears instantly instead of booting a renderer. Skip it
@@ -140,6 +180,21 @@ if (!gotLock) {
       updateCheckRunning = true
       try {
         const update = await checkForUpdates()
+        // yt-dlp releases are small and frequent; apply them quietly unless a
+        // download is using the executable right now, then prompt as before.
+        if (update.ytdlp && loadSettings().autoUpdateYtdlp && !downloadManager.hasActiveWork()) {
+          const result = await updateYtdlp(loadSettings().ytdlpPath)
+          resetToolCache()
+          clearAnalysisCache()
+          if (result.ok) {
+            console.log(`[snag] yt-dlp updated to ${update.ytdlp.latest} in the background`)
+            update.ytdlp = null
+            for (const win of BrowserWindow.getAllWindows()) {
+              if (!win.isDestroyed()) win.webContents.send('toolsChanged')
+            }
+            notifyInfo('yt-dlp updated', `Now on ${update.ytdlp === null ? 'the latest release' : ''}`.trim(), false)
+          }
+        }
         if (update.status === 'success' || update.app || update.ytdlp) {
           publishUpdateAvailability(update)
         }
@@ -161,4 +216,5 @@ if (!gotLock) {
   })
 
   app.on('before-quit', () => downloadManager.shutdown())
+  app.on('will-quit', () => globalShortcut.unregisterAll())
 }

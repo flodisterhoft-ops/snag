@@ -3,6 +3,7 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'
 import {
+  allowedCorsOrigin,
   isChromeExtensionOrigin,
   isSnagExtensionOrigin,
   normalizeAudioLanguages,
@@ -34,6 +35,15 @@ describe('browser integration', () => {
       .slice(0, 32)
       .replace(/./g, (c) => 'abcdefghijklmnop'[parseInt(c, 16)])
     expect(derived).toBe(SNAG_EXTENSION_ID)
+  })
+
+  it('grants CORS only to extension origins so web pages cannot probe the local API', () => {
+    expect(allowedCorsOrigin('chrome-extension://abcdefghijklmnopabcdefghijklmnop')).toBe(
+      'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
+    )
+    expect(allowedCorsOrigin('https://example.com')).toBeNull()
+    expect(allowedCorsOrigin('null')).toBeNull()
+    expect(allowedCorsOrigin(undefined)).toBeNull()
   })
 
   it('normalizes, deduplicates, validates, and caps favorite languages', () => {

@@ -3,6 +3,7 @@ import type {
   Api,
   DownloadRequest,
   Settings,
+  SettingsSection,
   ProgressUpdate,
   DownloadJob,
   UpdateAvailability,
@@ -14,6 +15,9 @@ const api: Api = {
   enqueue: (request: DownloadRequest) => ipcRenderer.invoke('enqueue', request),
   cancel: (jobId: string) => ipcRenderer.invoke('cancel', jobId),
   retry: (jobId: string) => ipcRenderer.invoke('retry', jobId),
+  pauseJob: (jobId: string) => ipcRenderer.invoke('pauseJob', jobId),
+  resumeJob: (jobId: string) => ipcRenderer.invoke('resumeJob', jobId),
+  reorderJobs: (jobIds: string[]) => ipcRenderer.invoke('reorderJobs', jobIds),
   clearCompleted: () => ipcRenderer.invoke('clearCompleted'),
   removeJob: (jobId: string) => ipcRenderer.invoke('removeJob', jobId),
   getJobs: () => ipcRenderer.invoke('getJobs'),
@@ -36,6 +40,20 @@ const api: Api = {
     ipcRenderer.on('jobAdded', listener)
     return () => ipcRenderer.removeListener('jobAdded', listener)
   },
+  onClipboardUrl: (cb: (url: string) => void) => {
+    const listener = (_e: IpcRendererEvent, url: string): void => cb(url)
+    ipcRenderer.on('clipboardUrl', listener)
+    return () => ipcRenderer.removeListener('clipboardUrl', listener)
+  },
+  onToolsChanged: (cb: () => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('toolsChanged', listener)
+    return () => ipcRenderer.removeListener('toolsChanged', listener)
+  },
+  getCookieStatus: () => ipcRenderer.invoke('getCookieStatus'),
+  pickCookiesFile: () => ipcRenderer.invoke('pickCookiesFile'),
+  forgetCookies: () => ipcRenderer.invoke('forgetCookies'),
+  getGlobalShortcutStatus: () => ipcRenderer.invoke('getGlobalShortcutStatus'),
   consumePendingExternalUrl: () => ipcRenderer.invoke('consumePendingExternalUrl'),
   consumePendingOpenSettings: () => ipcRenderer.invoke('consumePendingOpenSettings'),
   onExternalUrl: (cb: (url: string) => void) => {
@@ -43,8 +61,8 @@ const api: Api = {
     ipcRenderer.on('externalUrl', listener)
     return () => ipcRenderer.removeListener('externalUrl', listener)
   },
-  onOpenSettings: (cb: () => void) => {
-    const listener = (): void => cb()
+  onOpenSettings: (cb: (section: SettingsSection) => void) => {
+    const listener = (_e: IpcRendererEvent, section: SettingsSection): void => cb(section)
     ipcRenderer.on('openSettings', listener)
     return () => ipcRenderer.removeListener('openSettings', listener)
   },
@@ -52,7 +70,13 @@ const api: Api = {
   installBrowserExtension: () => ipcRenderer.invoke('installBrowserExtension'),
   getBrowserExtensionPath: () => ipcRenderer.invoke('getBrowserExtensionPath'),
   getBrowserExtensionStatus: () => ipcRenderer.invoke('getBrowserExtensionStatus'),
-  openBrowserExtensionSetup: () => ipcRenderer.invoke('openBrowserExtensionSetup'),
+  beginExtensionSetup: () => ipcRenderer.invoke('beginExtensionSetup'),
+  getDefaultBrowser: () => ipcRenderer.invoke('getDefaultBrowser'),
+  openBrowserExtensionsPage: () => ipcRenderer.invoke('openBrowserExtensionsPage'),
+  revealBrowserExtensionFolder: () => ipcRenderer.invoke('revealBrowserExtensionFolder'),
+  copyText: (text: string) => ipcRenderer.invoke('copyText', text),
+  getStorageStatus: () => ipcRenderer.invoke('getStorageStatus'),
+  relaunchOutsideSandbox: () => ipcRenderer.invoke('relaunchOutsideSandbox'),
   deleteJobFile: (jobId: string) => ipcRenderer.invoke('deleteJobFile', jobId),
   deleteCompletedFiles: () => ipcRenderer.invoke('deleteCompletedFiles'),
   shareFile: (jobId: string) => ipcRenderer.invoke('shareFile', jobId),

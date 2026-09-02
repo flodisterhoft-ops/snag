@@ -3,13 +3,15 @@ import { createServer, IncomingMessage, Server, ServerResponse } from 'http'
 import { randomBytes, timingSafeEqual } from 'crypto'
 import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { analyze } from './metadata'
+import { analyzeCached, clearAnalysisCache } from './metadata'
+import { cookieArgs, cookieSyncWanted, saveBrowserCookies } from './cookies'
 import { downloadManager } from './downloader'
 import { loadSettings, saveSettings } from './settings'
 import { isHttpUrl } from './protocol'
 import { openSettingsWindow } from './windows'
 import {
-  isChromeExtensionOrigin,
+  allowedCorsOrigin,
+  isSettingsSection,
   isSnagExtensionOrigin,
   normalizeAudioLanguages
 } from '@shared/browserIntegration'
@@ -22,6 +24,8 @@ import type { DownloadRequest, VideoContainer, AudioOutputFormat } from '@shared
 
 export const LOCAL_API_PORTS = [43110, 43111, 43112, 43113, 43114, 43115, 43116, 43117]
 const MAX_BODY_BYTES = 64 * 1024
+// A full cookie export for a dozen sites is a few hundred kilobytes at most.
+const MAX_COOKIE_BODY_BYTES = 2 * 1024 * 1024
 
 let server: Server | null = null
 let activePort: number | null = null
@@ -68,27 +72,33 @@ function sendJson(
   payload: unknown,
   origin?: string
 ): void {
-  const body = JSON.stringify(payload)
-  const allowedOrigin = isChromeExtensionOrigin(origin) ? origin : '*'
-  res.writeHead(status, {
-    'Content-Type': 'application/json',
-    // The Bearer token is the actual gate; CORS only needs to let the
-    // extension's service worker read responses.
-    'Access-Control-Allow-Origin': allowedOrigin,
-    Vary: 'Origin',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
-  })
-  res.end(body)
+  const headers: Record<string, string> = { Vary: 'Origin' }
+  // The Bearer token is the actual gate; CORS only needs to let the
+  // extension's service worker read responses. Web pages get no grant, so
+  // even the token-free /health probe cannot tell them Snag is installed.
+  const allowedOrigin = allowedCorsOrigin(origin)
+  if (allowedOrigin) {
+    headers['Access-Control-Allow-Origin'] = allowedOrigin
+    headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+    headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+  }
+  if (status === 204) {
+    res.writeHead(status, headers)
+    res.end()
+    return
+  }
+  headers['Content-Type'] = 'application/json'
+  res.writeHead(status, headers)
+  res.end(JSON.stringify(payload))
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<string> {
   return new Promise((resolve, reject) => {
     let size = 0
     const chunks: Buffer[] = []
     req.on('data', (chunk: Buffer) => {
       size += chunk.length
-      if (size > MAX_BODY_BYTES) {
+      if (size > limit) {
         reject(new Error('Request body too large.'))
         req.destroy()
         return
@@ -153,8 +163,9 @@ function requestFromBody(raw: unknown): DownloadRequest | null {
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined
+  const reply = (status: number, payload: unknown): void => reply(status, payload)
   if (req.method === 'OPTIONS') {
-    sendJson(res, 204, {}, origin)
+    reply(204, null)
     return
   }
   const path = (req.url ?? '/').split('?')[0]
@@ -162,7 +173,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   // Startup polling only needs to distinguish Snag from an unused/local port.
   // Keep it token-free so waking the app does not repeatedly attempt pairing.
   if (req.method === 'GET' && path === '/health') {
-    sendJson(res, 200, { app: 'snag' }, origin)
+    reply(200, { app: 'snag' })
     return
   }
 
@@ -172,26 +183,56 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   // extensions and ordinary websites are rejected.
   if (req.method === 'POST' && path === '/pair') {
     if (!isSnagExtensionOrigin(origin)) {
-      sendJson(res, 403, { error: 'extension origin required' }, origin)
+      reply(403, { error: 'extension origin required' })
       return
     }
-    sendJson(res, 200, { app: 'snag', token: getLocalApiToken() }, origin)
+    reply(200, { app: 'snag', token: getLocalApiToken() })
     return
   }
 
   if (!isAuthorized(req)) {
-    sendJson(res, 401, { error: 'unauthorized' }, origin)
+    reply(401, { error: 'unauthorized' })
     return
   }
 
   if (req.method === 'GET' && path === '/ping') {
-    sendJson(res, 200, { app: 'snag', version: app.getVersion() })
+    reply(200, {
+      app: 'snag',
+      version: app.getVersion(),
+      // Asks the extension to send a fresh cookie export on this heartbeat.
+      cookieSyncWanted: cookieSyncWanted(loadSettings())
+    })
+    return
+  }
+
+  // Cookie export from Snag's own extension for signed-in downloads. Only the
+  // pinned extension may send it, only while the user enabled that source.
+  if (req.method === 'POST' && path === '/cookies') {
+    if (!isSnagExtensionOrigin(origin)) {
+      reply(403, { ok: false, error: 'extension origin required' })
+      return
+    }
+    if (loadSettings().cookieSource !== 'extension') {
+      reply(409, { ok: false, error: 'Browser sign-in is not enabled in Snag.' })
+      return
+    }
+    let count: number
+    try {
+      const body = JSON.parse(await readBody(req, MAX_COOKIE_BODY_BYTES)) as { cookies?: unknown }
+      count = saveBrowserCookies(body.cookies)
+    } catch (err) {
+      reply(400, { ok: false, error: (err as Error).message || 'Invalid cookie export.' })
+      return
+    }
+    saveSettings({ cookiesSyncedAt: Date.now() })
+    clearAnalysisCache()
+    reply(200, { ok: true, count })
     return
   }
 
   if (req.method === 'GET' && path === '/defaults') {
     const s = loadSettings()
-    sendJson(res, 200, {
+    reply(200, {
       saveDir: s.defaultSaveDir,
       favorites: s.multiAudio.languages,
       multiAudioEnabled: s.multiAudio.enabled,
@@ -203,8 +244,14 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
 
   if (req.method === 'POST' && path === '/open-settings') {
-    openSettingsWindow()
-    sendJson(res, 200, { ok: true }, origin)
+    let section: unknown
+    try {
+      section = (JSON.parse((await readBody(req)) || '{}') as { section?: unknown }).section
+    } catch {
+      /* no section requested */
+    }
+    openSettingsWindow(isSettingsSection(section) ? section : 'general')
+    reply(200, { ok: true })
     return
   }
 
@@ -214,37 +261,37 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (now - settings.browserExtensionLastSeen > 5 * 60 * 1000) {
       saveSettings({ browserExtensionLastSeen: now })
     }
-    sendJson(res, 200, { ok: true }, origin)
+    reply(200, { ok: true })
     return
   }
 
   if (req.method === 'POST' && path.startsWith('/jobs/') && path.endsWith('/cancel')) {
     const id = path.slice('/jobs/'.length, -'/cancel'.length)
     if (!/^job_[a-z0-9_]+$/i.test(id)) {
-      sendJson(res, 400, { ok: false, error: 'Invalid job id.' }, origin)
+      reply(400, { ok: false, error: 'Invalid job id.' })
       return
     }
     if (!downloadManager.getJob(id)) {
-      sendJson(res, 404, { ok: false, error: 'Download not found.' }, origin)
+      reply(404, { ok: false, error: 'Download not found.' })
       return
     }
     downloadManager.cancel(id)
-    sendJson(res, 200, { ok: true }, origin)
+    reply(200, { ok: true })
     return
   }
 
   if (req.method === 'GET' && path.startsWith('/jobs/')) {
     const id = path.slice('/jobs/'.length)
     if (!/^job_[a-z0-9_]+$/i.test(id)) {
-      sendJson(res, 400, { ok: false, error: 'Invalid job id.' }, origin)
+      reply(400, { ok: false, error: 'Invalid job id.' })
       return
     }
     const job = downloadManager.getJob(id)
     if (!job) {
-      sendJson(res, 404, { ok: false, error: 'Download not found.' }, origin)
+      reply(404, { ok: false, error: 'Download not found.' })
       return
     }
-    sendJson(res, 200, {
+    reply(200, {
       ok: true,
       job: {
         id: job.id,
@@ -255,7 +302,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
         sizeLabel: job.sizeLabel,
         errorMessage: job.errorMessage
       }
-    }, origin)
+    })
     return
   }
 
@@ -268,13 +315,13 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       /* handled below */
     }
     if (languages.length === 0) {
-      sendJson(res, 400, { ok: false, error: 'Choose at least one language.' }, origin)
+      reply(400, { ok: false, error: 'Choose at least one language.' })
       return
     }
     const settings = saveSettings({
       multiAudio: { enabled: languages.length >= 2, languages }
     })
-    sendJson(res, 200, { ok: true, favorites: settings.multiAudio.languages }, origin)
+    reply(200, { ok: true, favorites: settings.multiAudio.languages })
     return
   }
 
@@ -287,14 +334,15 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       /* handled below */
     }
     if (!url || !isHttpUrl(url)) {
-      sendJson(res, 400, { ok: false, error: 'A valid http(s) url is required.' })
+      reply(400, { ok: false, error: 'A valid http(s) url is required.' })
       return
     }
     try {
-      const info = await analyze(url, loadSettings().ytdlpPath)
-      sendJson(res, 200, { ok: true, info })
+      const settings = loadSettings()
+      const info = await analyzeCached(url, settings.ytdlpPath, cookieArgs(settings))
+      reply(200, { ok: true, info })
     } catch (err) {
-      sendJson(res, 200, { ok: false, error: (err as Error).message })
+      reply(200, { ok: false, error: (err as Error).message })
     }
     return
   }
@@ -307,15 +355,15 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       /* handled below */
     }
     if (!request) {
-      sendJson(res, 400, { ok: false, error: 'Invalid download request.' })
+      reply(400, { ok: false, error: 'Invalid download request.' })
       return
     }
     const job = downloadManager.enqueue(request)
-    sendJson(res, 200, { ok: true, jobId: job.id }, origin)
+    reply(200, { ok: true, jobId: job.id })
     return
   }
 
-  sendJson(res, 404, { error: 'not found' })
+  reply(404, { error: 'not found' })
 }
 
 async function tryListen(port: number): Promise<Server | null> {

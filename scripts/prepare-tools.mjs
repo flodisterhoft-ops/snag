@@ -177,6 +177,17 @@ async function installDirect(tool) {
 }
 
 async function installArchive(tool) {
+  // Outputs that already carry the pinned hashes need no archive at all,
+  // which keeps rebuilds offline once the tools have been verified once.
+  let verified = 0
+  for (const file of tool.files) {
+    if (await hasExpectedHash(join(outputDir, file.output), file.sha256)) verified += 1
+  }
+  if (verified === tool.files.length) {
+    for (const file of tool.files) console.log(`Verified ${tool.id} ${tool.version}: ${join(outputDir, file.output)}`)
+    return
+  }
+
   const cacheDir = join(tmpdir(), 'snag-pinned-tools')
   const archiveName = `${tool.id}-${tool.version}-${tool.download.sha256.slice(0, 12)}.zip`
   const archive = join(cacheDir, archiveName)
