@@ -3,6 +3,12 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.8.8 — 2026-09-02
+
+- Chrome extension: hovering MP4, MKV, or WebM in the panel (and MP3, M4A, Opus, Original on the Audio tab) shows what each format is good for, and the recommended one carries a small green star, like in Settings.
+- Chrome extension: the selected container chip is drawn with one clean outline; the sliding highlight that left uneven, doubled edges on the left and right is gone. The audio format pills use matching rounded corners.
+- Chrome extension: the share chooser is a second card in the panel's style, level with the panel's top edge, instead of a small menu next to the Share button.
+
 ## 1.8.7 — 2026-09-02
 
 - Queue cards read cleaner: the status word (Completed, Downloading, Paused, …) sits on the right above the buttons, and finished downloads no longer list the file path under the title; the "Show in folder" button's tooltip still shows where the file went.

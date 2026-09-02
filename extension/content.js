@@ -298,18 +298,17 @@
     .qrow.on .size { color: #eef0f3; font-weight: 600; }
     .qrow.on .q { flex: 0 0 auto; }
     .qrow.on .fchips { margin-left: auto; }
-    .fchips { display: flex; gap: 2px; flex-shrink: 0; position: relative; }
-    .fchip-ind { position: absolute; top: 0; bottom: 0; background: rgba(198,242,77,0.13); border: 1px solid #c6f24d; border-radius: 7px; transition: left .2s cubic-bezier(.3,.8,.3,1), width .2s cubic-bezier(.3,.8,.3,1); pointer-events: none; }
-    .fchips.no-trans .fchip-ind { transition: none; }
-    .fchip { position: relative; z-index: 1; padding: 3px 5px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.13); background: none; cursor: pointer; color: #a7adb7; font-size: 10px; font-weight: 700; letter-spacing: 0.03em; transition: border-color .13s, color .13s; }
+    .fchips { display: flex; gap: 3px; flex-shrink: 0; }
+    .fchip { display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.13); background: none; cursor: pointer; color: #a7adb7; font-size: 10px; font-weight: 700; letter-spacing: 0.03em; transition: border-color .13s, color .13s, background .13s; }
     .fchip:hover { border-color: rgba(255,255,255,0.3); }
-    .fchip.on { border-color: transparent; color: #eef0f3; }
+    .fchip.on { border-color: #c6f24d; background: rgba(198,242,77,0.13); color: #eef0f3; }
+    .star { width: 9px; height: 9px; fill: #c6f24d; flex-shrink: 0; }
 
     /* audio tab */
     .audio-view { padding: 12px 12px 4px; display: flex; flex-direction: column; gap: 12px; }
     .audio-view .group .lbl2 { color: #6f757f; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 7px; }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-    .chip { flex: 1; min-width: 0; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 5px 6px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.13); background: #0f1116; color: #a7adb7; font-size: 11px; font-weight: 600; cursor: pointer; transition: border-color .13s, color .13s, background .13s; }
+    .chip { flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 5px 6px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.13); background: #0f1116; background-clip: padding-box; color: #a7adb7; font-size: 11px; font-weight: 600; cursor: pointer; transition: border-color .13s, color .13s, background .13s; }
     .chip:hover { border-color: rgba(255,255,255,0.3); }
     .chip.on { background: rgba(198,242,77,0.13); border-color: #c6f24d; color: #eef0f3; }
     .lang-pref { padding: 10px; border: 1px solid rgba(198,242,77,0.22); border-radius: 10px; background: rgba(198,242,77,0.055); }
@@ -325,9 +324,9 @@
     .share:disabled { opacity: 0.5; cursor: not-allowed; }
     .share svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
     /* share-app chooser: a small card that slides out beside the panel */
-    .share-fly { position: absolute; left: calc(100% + 8px); top: 0; min-width: 190px; width: max-content; display: flex; flex-direction: column; gap: 2px; padding: 6px; background: #1d2129; color: #eef0f3; border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; box-shadow: 0 18px 44px -14px rgba(0,0,0,0.85); transform-origin: left center; animation: snagFlyIn .22s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-    .share-fly.left { left: auto; right: calc(100% + 8px); transform-origin: right center; animation-name: snagFlyInLeft; }
-    .share-fly .lbl2 { color: #6f757f; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 10px 5px; }
+    .share-fly { position: absolute; left: calc(100% + 8px); top: 0; min-width: 200px; width: max-content; display: flex; flex-direction: column; gap: 2px; padding: 10px 8px 8px; background: linear-gradient(180deg, #191c23, #14161c); color: #eef0f3; border: 1px solid rgba(255,255,255,0.14); border-radius: 16px; box-shadow: 0 24px 60px -18px rgba(0,0,0,0.85); transform-origin: top left; animation: snagFlyIn .22s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+    .share-fly.left { left: auto; right: calc(100% + 8px); transform-origin: top right; animation-name: snagFlyInLeft; }
+    .share-fly .lbl2 { color: #eef0f3; font-size: 13px; font-weight: 600; padding: 2px 10px 10px; }
     .share-fly .item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: #eef0f3; font-size: 13px; font-weight: 600; text-align: left; white-space: nowrap; cursor: pointer; animation: snagChipIn .22s ease both; }
     .share-fly .item:hover { background: rgba(255,255,255,0.08); }
     .share-fly .item img, .share-fly .item svg { width: 20px; height: 20px; border-radius: 5px; flex-shrink: 0; }
@@ -351,7 +350,7 @@
     .err { color: #ff9d94; font-size: 12.5px; text-align: center; }
 
     @media (prefers-reduced-motion: reduce) {
-      .panel, .panel.closing, .spin, .seg-ind, .fchip-ind, .qrow .radio::after, .share-fly, .share-fly .item { animation-duration: 0.001ms !important; transition: none !important; }
+      .panel, .panel.closing, .spin, .seg-ind, .qrow .radio::after, .share-fly, .share-fly .item { animation-duration: 0.001ms !important; transition: none !important; }
     }
   `
 
@@ -484,6 +483,18 @@
     const meta = target ? { title: target.title || '', thumbnail: target.thumbnail || null } : pageMeta(video)
 
     const LOGO = '<svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>'
+    const STAR_ICON = '<svg class="star" viewBox="0 0 24 24" aria-label="Recommended" role="img"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6L2.5 9.4l6.6-.8z"/></svg>'
+    const CONTAINER_HINTS = {
+      mp4: 'MP4 plays everywhere: phones, TVs, editors. Best default.',
+      mkv: 'MKV holds any codec plus several audio tracks and subtitles in one file. Needed for dubs.',
+      webm: 'WebM is the open format for VP9 and AV1. Browsers and most players.'
+    }
+    const AUDIO_HINTS = {
+      mp3: 'MP3 plays everywhere.',
+      m4a: 'M4A (AAC): the same quality as MP3 at a smaller size; Apple-friendly.',
+      opus: 'Opus makes the smallest files; modern players only.',
+      best: 'Original keeps the source track as is, with no re-encoding.'
+    }
     const SHARE_ICON = '<svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.6 6.8-4.2"/><path d="m8.6 13.4 6.8 4.2"/></svg>'
     const APP_ICONS = {
       telegram: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="#2AABEE"/><path d="M5.4 11.6l11.6-4.5c.5-.2 1 .1.8.9l-2 9.3c-.1.7-.6.8-1.1.5l-3-2.2-1.5 1.4c-.2.2-.3.3-.6.3l.2-3.1 5.6-5.1c.2-.2 0-.3-.3-.1l-7 4.4-3-.9c-.7-.2-.7-.7.3-.9z" fill="#fff"/></svg>',
@@ -675,10 +686,10 @@
       footRow.append(go, shareBtn)
       foot.append(footRow)
 
-      // The chooser is a sibling of the panel inside the shadow root, so the
-      // panel's own scrolling cannot clip it. It slides out to the right of
-      // the panel level with the Share button, or to the left when the panel
-      // sits at the right edge of the window.
+      // The chooser is a second card beside the panel, level with its top
+      // edge: a sibling inside the shadow root, so the panel's own scrolling
+      // cannot clip it. It slides out to the right, or to the left when the
+      // panel sits at the right edge of the window.
       let shareFly = null
       function closeShareFly() {
         if (shareFly) shareFly.remove()
@@ -704,11 +715,6 @@
           })
           fly.appendChild(item)
         })
-        // Offsets rather than client rects: the panel may still be in its
-        // open animation (scaled), and rects would follow the transform.
-        let top = -root.scrollTop
-        for (let n = shareBtn; n && n !== host; n = n.offsetParent) top += n.offsetTop
-        fly.style.top = Math.max(0, top - 6) + 'px'
         const hostRect = host.getBoundingClientRect()
         shadow.appendChild(fly)
         const width = fly.getBoundingClientRect().width
@@ -787,31 +793,24 @@
         const rowEls = []
         const sizeEls = []
 
-        const chips = el('span', 'fchips no-trans')
-        const ind = el('span', 'fchip-ind')
-        chips.appendChild(ind)
+        const chips = el('span', 'fchips')
         let chipEls = {}
-
-        const moveInd = () => {
-          const c = chipEls[state.container]
-          if (!c) { ind.style.width = '0'; return }
-          ind.style.left = c.offsetLeft + 'px'
-          ind.style.width = c.offsetWidth + 'px'
-        }
 
         function buildChips(containers) {
           for (const btn2 of Object.values(chipEls)) btn2.remove()
           chipEls = {}
+          const rows = rowsByHeight.get(state.quality) || []
+          const rec = recommendedRow(rows, selectedGroups().length >= 2, state.defaults?.preferredContainer || 'mp4')
           for (const c of containers) {
             const b = el('button', 'fchip' + (c === state.container ? ' on' : ''), c.toUpperCase())
             b.type = 'button'
-            b.title = sizeText(state.quality, c)
+            if (rec && rec.container === c) b.insertAdjacentHTML('afterbegin', STAR_ICON)
+            b.title = (CONTAINER_HINTS[c] || c.toUpperCase()) + '\n' + sizeText(state.quality, c)
             b.addEventListener('click', (e) => {
               e.stopPropagation()
               if (state.container === c) return
               state.container = c
               for (const [k, elc] of Object.entries(chipEls)) elc.classList.toggle('on', k === c)
-              moveInd()
               for (const s of sizeEls) s.el.textContent = sizeText(s.height, c)
               updateGo()
             })
@@ -833,7 +832,6 @@
           state.quality = height
           ensureContainer()
           rowEls[heights.indexOf(height)]?.classList.add('on')
-          chips.classList.add('no-trans')
           buildChips(containersFor(height))
           placeChips(height)
           for (const s of sizeEls) s.el.textContent = sizeText(s.height, state.container)
@@ -846,8 +844,6 @@
               { duration: 240, easing: 'cubic-bezier(.3,.8,.3,1)' }
             )
           }
-          moveInd()
-          requestAnimationFrame(() => chips.classList.remove('no-trans'))
           updateGo()
         }
 
@@ -875,10 +871,6 @@
 
         buildChips(containersFor(state.quality))
         if (heights.length) placeChips(state.quality)
-        requestAnimationFrame(() => {
-          moveInd()
-          requestAnimationFrame(() => chips.classList.remove('no-trans'))
-        })
       }
 
       // ---- audio tab: output format, plus language when the video is multi-dub ----
@@ -890,6 +882,8 @@
         for (const f of ['mp3', 'm4a', 'opus', 'best']) {
           const p = el('button', 'chip' + (state.audioFmt === f ? ' on' : ''), f === 'best' ? 'Original' : f.toUpperCase())
           p.type = 'button'
+          if (f === 'mp3') p.insertAdjacentHTML('afterbegin', STAR_ICON)
+          p.title = AUDIO_HINTS[f] || ''
           p.addEventListener('click', () => { state.audioFmt = f; buildAudioView(); updateGo() })
           fmts.appendChild(p)
         }
