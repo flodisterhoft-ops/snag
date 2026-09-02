@@ -11,8 +11,90 @@ import { loadSettings } from './settings'
 import { findVlc, playerName } from './player'
 import { execFile, spawn } from 'child_process'
 import { createHash } from 'crypto'
-import { existsSync, linkSync, mkdirSync, statSync, unlinkSync } from 'fs'
-import { basename, extname, join } from 'path'
+import { existsSync, linkSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync } from 'fs'
+import { basename, dirname, extname, join } from 'path'
+
+// ---- Store (MSIX) apps ----
+// A program picked from the Start Menu can be a packaged app whose exe lives
+// under C:\Program Files\WindowsApps\<package>\. Windows blocks the usual icon
+// extraction there and refuses to start the exe directly, but the package's
+// own logo PNGs are readable and its manifest names the execution alias
+// (%LOCALAPPDATA%\Microsoft\WindowsApps\<alias>.exe) that launches it.
+
+export function msixPackageRoot(path: string): string | null {
+  const m = /^(.*[\\/]WindowsApps[\\/][^\\/]+)[\\/]/i.exec(path)
+  return m ? m[1] : null
+}
+
+function readManifest(root: string): string | null {
+  try {
+    return readFileSync(join(root, 'AppxManifest.xml'), 'utf8')
+  } catch {
+    return null
+  }
+}
+
+// Picks the largest plain logo variant the package ships (targetsize-64 over
+// targetsize-32, scale-200 over scale-100, unplated over plated).
+export function pickLogoFile(names: string[], base: string): string | null {
+  const lower = base.toLowerCase()
+  let best: { name: string; score: number } | null = null
+  for (const name of names) {
+    const n = name.toLowerCase()
+    if (!n.startsWith(lower) || !n.endsWith('.png')) continue
+    const rest = n.slice(lower.length, -4)
+    if (rest && !rest.startsWith('.') && !rest.startsWith('_')) continue
+    if (rest.includes('contrast')) continue
+    let score = 1
+    const target = /targetsize-(\d+)/.exec(rest)
+    const scale = /scale-(\d+)/.exec(rest)
+    if (target) score += Math.min(Number(target[1]), 256) * 10
+    else if (scale) score += Math.min(Number(scale[1]), 400) * 2
+    if (rest.includes('unplated')) score += 5
+    if (rest.includes('lightunplated')) score -= 3
+    if (!best || score > best.score) best = { name, score }
+  }
+  return best ? best.name : null
+}
+
+export function msixAppIcon(path: string): string | null {
+  const root = msixPackageRoot(path)
+  if (!root) return null
+  const manifest = readManifest(root)
+  if (!manifest) return null
+  const logo =
+    /Square44x44Logo="([^"]+)"/.exec(manifest)?.[1] ??
+    /Square150x150Logo="([^"]+)"/.exec(manifest)?.[1] ??
+    /<Logo>([^<]+)<\/Logo>/.exec(manifest)?.[1]
+  if (!logo) return null
+  const rel = logo.replace(/\//g, '\\')
+  const dir = join(root, dirname(rel))
+  const base = basename(rel, extname(rel))
+  try {
+    const file = pickLogoFile(readdirSync(dir), base)
+    if (!file) return null
+    return 'data:image/png;base64,' + readFileSync(join(dir, file)).toString('base64')
+  } catch {
+    return null
+  }
+}
+
+export function msixExecutionAlias(path: string): string | null {
+  const root = msixPackageRoot(path)
+  if (!root || !process.env['LOCALAPPDATA']) return null
+  const manifest = readManifest(root)
+  const alias = manifest && /ExecutionAlias\s+Alias="([^"]+)"/i.exec(manifest)?.[1]
+  if (!alias) return null
+  const aliasPath = join(process.env['LOCALAPPDATA'], 'Microsoft', 'WindowsApps', alias)
+  // Aliases are app-execution reparse points: stat() and existsSync() report
+  // EACCES on them, lstat() sees the link itself.
+  try {
+    lstatSync(aliasPath)
+    return aliasPath
+  } catch {
+    return null
+  }
+}
 
 const SHARE_SCRIPT = `
 $target = $env:SNAG_SHARE_FILE
@@ -146,7 +228,8 @@ function shareWithTelegram(target: string): Promise<string> {
 function launchCustomApp(executable: string, target: string): Promise<string> {
   return new Promise((resolve) => {
     try {
-      const child = spawn(executable, [target], { detached: true, stdio: 'ignore', windowsHide: false })
+      const program = msixExecutionAlias(executable) ?? executable
+      const child = spawn(program, [target], { detached: true, stdio: 'ignore', windowsHide: false })
       child.once('spawn', () => {
         child.unref()
         resolve('')
@@ -175,12 +258,14 @@ const iconCache = new Map<string, string | null>()
 async function appIcon(path: string): Promise<string | null> {
   const cached = iconCache.get(path)
   if (cached !== undefined) return cached
-  let icon: string | null = null
-  try {
-    const image = await app.getFileIcon(path, { size: 'large' })
-    icon = image.isEmpty() ? null : image.toDataURL()
-  } catch {
-    icon = null
+  let icon: string | null = msixAppIcon(path)
+  if (!icon) {
+    try {
+      const image = await app.getFileIcon(path, { size: 'large' })
+      icon = image.isEmpty() ? null : image.toDataURL()
+    } catch {
+      icon = null
+    }
   }
   iconCache.set(path, icon)
   return icon

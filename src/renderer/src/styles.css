@@ -1284,6 +1284,39 @@ select {
   align-items: center;
   gap: 4px;
 }
+.icon-btn.danger.active {
+  background: var(--danger-soft);
+}
+.job-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  animation: fadeUp 0.15s ease both;
+}
+.pill-btn {
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.pill-btn:hover {
+  background: var(--hover-2);
+}
+.pill-btn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.pill-btn.danger:hover {
+  filter: brightness(1.1);
+}
 .icon-btn.accent {
   color: var(--accent);
 }

@@ -6,6 +6,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeFileSync
 } from 'fs'
@@ -14,6 +15,20 @@ import { app } from 'electron'
 import { loadSettings } from './settings'
 import { locateYtdlp, ffmpegDir, locateAria2c, cleanYtdlpError, ytdlpChildEnv } from './ytdlp'
 import { buildDownloadArgs, PROGRESS_PREFIX } from './args'
+
+// Size of the finished file for the queue card ("128 MB"); the progress lines
+// only ever report one stream at a time, so they undercount merged videos.
+function fileSizeLabel(path: string | null): string | null {
+  if (!path) return null
+  try {
+    const bytes = statSync(path).size
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+  } catch {
+    return null
+  }
+}
 import { cookieArgs } from './cookies'
 import { notifyComplete, notifyError } from './notify'
 import { shareFile } from './share'
@@ -543,6 +558,7 @@ export class DownloadManager extends EventEmitter {
           progress: 100,
           speed: null,
           eta: null,
+          sizeLabel: fileSizeLabel(path) ?? job.sizeLabel,
           filepath: path,
           completedAt: Date.now()
         })

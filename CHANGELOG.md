@@ -3,6 +3,13 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.8.9 — 2026-09-02
+
+- Fix: a Store app added under "Share with" (Blip, for example) showed a generic icon and could fail to start, because Windows blocks icon extraction and direct launches inside its WindowsApps folder. Snag now reads the app's own logo from its package and starts it through its execution alias.
+- Queue cards show the size of the finished file on their third line (the real size on disk, so merged video and audio are counted together), and merged audio tracks are named in full ("English + German audio") on the Download page and in the Chrome panel. The "shares when done" note is gone.
+- Deleting a downloaded file from the queue asks inline with two small Yes / No pills under the buttons instead of a system dialog.
+- Chrome extension: quality rows with 60 fps and three containers keep their file size inside the panel, the Download button has room for its whole "1080p · MKV · 79.0 MB" line, and the share chooser lines up with the bottom of the panel, next to the Share button.
+
 ## 1.8.8 — 2026-09-02
 
 - Chrome extension: hovering MP4, MKV, or WebM in the panel (and MP3, M4A, Opus, Original on the Audio tab) shows what each format is good for, and the recommended one carries a small green star, like in Settings.

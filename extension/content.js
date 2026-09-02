@@ -284,25 +284,25 @@
 
     /* quality list */
     .list { padding: 8px 6px 2px; display: flex; flex-direction: column; gap: 1px; }
-    .qrow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; border: 0; border-radius: 9px; background: none; color: #eef0f3; cursor: pointer; text-align: left; transition: background .13s; }
+    .qrow { display: flex; align-items: center; gap: 7px; width: 100%; padding: 7px 6px 7px 8px; border: 0; border-radius: 9px; background: none; color: #eef0f3; cursor: pointer; text-align: left; transition: background .13s; }
     .qrow:hover { background: rgba(255,255,255,0.045); }
     .qrow:focus-visible { outline: 2px solid #c6f24d; outline-offset: -2px; }
     .qrow .radio { width: 16px; height: 16px; border-radius: 50%; border: 1.6px solid rgba(255,255,255,0.28); flex-shrink: 0; display: grid; place-items: center; transition: border-color .15s; }
     .qrow.on .radio { border-color: #c6f24d; }
     .qrow .radio::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #c6f24d; transform: scale(0); transition: transform .18s cubic-bezier(.3,.8,.3,1); }
     .qrow.on .radio::after { transform: scale(1); }
-    .qrow .q { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; }
+    .qrow .q { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 4px; white-space: nowrap; }
     .qrow .q strong { font-size: 13.5px; font-weight: 700; letter-spacing: 0.01em; }
     .qrow .q strong em { font-style: normal; font-size: 10px; font-weight: 700; color: #8d949f; vertical-align: 1px; margin-left: 1px; }
-    .qrow .size { color: #a7adb7; font-size: 12.5px; width: 54px; text-align: right; flex-shrink: 0; }
+    .qrow .size { color: #a7adb7; font-size: 12px; min-width: 44px; text-align: right; flex-shrink: 0; white-space: nowrap; }
     .qrow.on .size { color: #eef0f3; font-weight: 600; }
     .qrow.on .q { flex: 0 0 auto; }
     .qrow.on .fchips { margin-left: auto; }
-    .fchips { display: flex; gap: 3px; flex-shrink: 0; }
-    .fchip { display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.13); background: none; cursor: pointer; color: #a7adb7; font-size: 10px; font-weight: 700; letter-spacing: 0.03em; transition: border-color .13s, color .13s, background .13s; }
+    .fchips { display: flex; gap: 2px; flex-shrink: 0; }
+    .fchip { display: inline-flex; align-items: center; gap: 2px; padding: 3px 4px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.13); background: none; cursor: pointer; color: #a7adb7; font-size: 10px; font-weight: 700; letter-spacing: 0.03em; transition: border-color .13s, color .13s, background .13s; }
     .fchip:hover { border-color: rgba(255,255,255,0.3); }
     .fchip.on { border-color: #c6f24d; background: rgba(198,242,77,0.13); color: #eef0f3; }
-    .star { width: 9px; height: 9px; fill: #c6f24d; flex-shrink: 0; }
+    .star { width: 8px; height: 8px; fill: #c6f24d; flex-shrink: 0; }
 
     /* audio tab */
     .audio-view { padding: 12px 12px 4px; display: flex; flex-direction: column; gap: 12px; }
@@ -318,14 +318,14 @@
     /* footer: download + share */
     .foot { padding: 10px 12px 12px; border-top: 1px solid rgba(255,255,255,0.07); margin-top: 7px; display: flex; flex-direction: column; }
     .foot-row { display: flex; gap: 8px; }
-    .share { width: 46px; flex-shrink: 0; border: 0; border-radius: 12px; background: #252a34; color: #c6f24d; cursor: pointer; display: grid; place-items: center; transition: background .15s, transform .1s; }
+    .share { width: 42px; flex-shrink: 0; border: 0; border-radius: 12px; background: #252a34; color: #c6f24d; cursor: pointer; display: grid; place-items: center; transition: background .15s, transform .1s; }
     .share:hover { background: #2f3542; }
     .share:active { transform: translateY(1px); }
     .share:disabled { opacity: 0.5; cursor: not-allowed; }
     .share svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
     /* share-app chooser: a small card that slides out beside the panel */
-    .share-fly { position: absolute; left: calc(100% + 8px); top: 0; min-width: 200px; width: max-content; display: flex; flex-direction: column; gap: 2px; padding: 10px 8px 8px; background: linear-gradient(180deg, #191c23, #14161c); color: #eef0f3; border: 1px solid rgba(255,255,255,0.14); border-radius: 16px; box-shadow: 0 24px 60px -18px rgba(0,0,0,0.85); transform-origin: top left; animation: snagFlyIn .22s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-    .share-fly.left { left: auto; right: calc(100% + 8px); transform-origin: top right; animation-name: snagFlyInLeft; }
+    .share-fly { position: absolute; left: calc(100% + 8px); bottom: 0; min-width: 200px; width: max-content; display: flex; flex-direction: column; gap: 2px; padding: 10px 8px 8px; background: linear-gradient(180deg, #191c23, #14161c); color: #eef0f3; border: 1px solid rgba(255,255,255,0.14); border-radius: 16px; box-shadow: 0 24px 60px -18px rgba(0,0,0,0.85); transform-origin: bottom left; animation: snagFlyIn .22s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+    .share-fly.left { left: auto; right: calc(100% + 8px); transform-origin: bottom right; animation-name: snagFlyInLeft; }
     .share-fly .lbl2 { color: #eef0f3; font-size: 13px; font-weight: 600; padding: 2px 10px 10px; }
     .share-fly .item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: #eef0f3; font-size: 13px; font-weight: 600; text-align: left; white-space: nowrap; cursor: pointer; animation: snagChipIn .22s ease both; }
     .share-fly .item:hover { background: rgba(255,255,255,0.08); }
@@ -333,12 +333,12 @@
     @keyframes snagChipIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
     @keyframes snagFlyIn { from { opacity: 0; transform: translateX(-10px) scale(0.96); } to { opacity: 1; transform: none; } }
     @keyframes snagFlyInLeft { from { opacity: 0; transform: translateX(10px) scale(0.96); } to { opacity: 1; transform: none; } }
-    .go { flex: 1; min-width: 0; padding: 11px 16px; border: 0; border-radius: 12px; cursor: pointer; background: linear-gradient(160deg,#c6f24d,#aee235); color: #17200a; display: flex; align-items: center; justify-content: space-between; gap: 10px; box-shadow: 0 10px 26px -12px rgba(198,242,77,0.55); transition: filter .15s, transform .1s; }
+    .go { flex: 1; min-width: 0; padding: 11px 12px; border: 0; border-radius: 12px; cursor: pointer; background: linear-gradient(160deg,#c6f24d,#aee235); color: #17200a; display: flex; align-items: center; justify-content: space-between; gap: 8px; box-shadow: 0 10px 26px -12px rgba(198,242,77,0.55); transition: filter .15s, transform .1s; }
     .go:hover { filter: brightness(1.05); }
     .go:active { transform: translateY(1px); }
     .go:disabled { opacity: 0.5; cursor: not-allowed; filter: none; box-shadow: none; }
     .go .gl { font-weight: 800; font-size: 14px; }
-    .go .gs { font-size: 11px; font-weight: 700; opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .go .gs { font-size: 10.5px; font-weight: 700; opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.01em; }
 
     /* message states (loading / not running / error) */
     .center { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 26px 14px; color: #a7adb7; text-align: center; }
@@ -686,9 +686,9 @@
       footRow.append(go, shareBtn)
       foot.append(footRow)
 
-      // The chooser is a second card beside the panel, level with its top
-      // edge: a sibling inside the shadow root, so the panel's own scrolling
-      // cannot clip it. It slides out to the right, or to the left when the
+      // The chooser is a second card beside the panel, level with its bottom
+      // edge (next to the Share button): a sibling inside the shadow root, so
+      // the panel's own scrolling cannot clip it. It slides out to the right, or to the left when the
       // panel sits at the right edge of the window.
       let shareFly = null
       function closeShareFly() {
@@ -959,7 +959,7 @@
             selectionLabel:
               chosen.video.qualityLabel + ' · ' + chosen.container.toUpperCase() +
               (chosen.tracks.length >= 2
-                ? ' · ' + chosen.tracks.map((t) => langBase(t.language).toUpperCase()).join('+') + ' audio'
+                ? ' · ' + chosen.tracks.map((t) => LANG_NAMES[langBase(t.language)] || langBase(t.language).toUpperCase()).join(' + ') + ' audio'
                 : '')
           }
         } else {

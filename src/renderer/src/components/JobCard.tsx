@@ -73,8 +73,11 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
     }
   }
 
+  // The trash button asks inline (Yes / No pills under the buttons) instead
+  // of a system dialog.
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const deleteDownloadedFile = async (): Promise<void> => {
-    if (!window.confirm(`Permanently delete “${job.request.title}” from disk? This cannot be undone.`)) return
+    setConfirmDelete(false)
     setActionError(null)
     const result = await deleteJobFile(job.id)
     if (!result.ok) setActionError(result.error || 'Windows could not delete this file.')
@@ -83,7 +86,6 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
   const extras: string[] = []
   if (job.request.section) extras.push('trimmed')
   if (job.request.openWhenDone) extras.push('opens when done')
-  if (job.request.shareWhenDone) extras.push('shares when done')
 
   return (
     <div className={`job-card ${status}`}>
@@ -139,6 +141,7 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
             </span>
           )}
           {status === 'error' && <span className="job-error">{job.errorMessage}</span>}
+          {status === 'completed' && job.sizeLabel && <span className="dim">{job.sizeLabel}</span>}
           {status === 'canceled' && <span className="dim">Download canceled</span>}
           {actionError && <span className="job-error">{actionError}</span>}
         </div>
@@ -217,7 +220,12 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
             >
               <Icon name="folder" size={16} />
             </button>
-            <button className="icon-btn danger" title="Delete file from disk" onClick={() => void deleteDownloadedFile()}>
+            <button
+              className={`icon-btn danger ${confirmDelete ? 'active' : ''}`}
+              title="Delete file from disk"
+              aria-expanded={confirmDelete}
+              onClick={() => setConfirmDelete((v) => !v)}
+            >
               <Icon name="trash" size={16} />
             </button>
             <button className="icon-btn" title="Remove from list only" onClick={() => void removeJob(job.id)}>
@@ -236,6 +244,17 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
           </>
         )}
         </div>
+        {confirmDelete && status === 'completed' && (
+          <div className="job-confirm" role="group" aria-label="Delete this file?">
+            <span>Delete this file?</span>
+            <button className="pill-btn danger" onClick={() => void deleteDownloadedFile()}>
+              Yes
+            </button>
+            <button className="pill-btn" onClick={() => setConfirmDelete(false)}>
+              No
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

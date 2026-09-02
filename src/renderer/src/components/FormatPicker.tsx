@@ -51,10 +51,6 @@ const groupKey = (lang: string | null): string => lang ?? '__default__'
 const baseLang = (code: string): string => code.trim().toLowerCase().split('-')[0]
 
 // Short display code for a track language ("en-US" → "EN").
-function shortLang(group: AudioLanguageGroup): string {
-  return group.language ? baseLang(group.language).toUpperCase() : 'Original'
-}
-
 function resolutionTier(format: VideoFormat): string | null {
   const resolution =
     format.width && format.height
@@ -406,7 +402,7 @@ export function FormatPicker({
 
     const langSuffix = info.hasMultipleAudioLanguages
       ? multi
-        ? ` · ${selectedGroups.map(shortLang).join('+')} audio`
+        ? ` · ${selectedGroups.map((g) => g.languageLabel).join(' + ')} audio`
         : selectedGroups[0]
           ? ` · ${selectedGroups[0].languageLabel}`
           : ''
