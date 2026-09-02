@@ -23,6 +23,14 @@ const ICONS = ['icon16.png', 'icon48.png', 'icon128.png']
 
 if (!manifest.key) throw new Error('extension/manifest.json must keep its `key` so the store ID stays pinned.')
 
+// The extension version tracks the app version, so chrome://extensions and the
+// store zip name both say which Snag release the copy on disk came from.
+if (manifest.version !== appVersion) {
+  throw new Error(
+    `extension/manifest.json is version ${manifest.version} but the app is ${appVersion}; bump the manifest to match.`
+  )
+}
+
 const staging = mkdtempSync(join(tmpdir(), 'snag-extension-pack-'))
 try {
   mkdirSync(join(staging, 'icons'))
