@@ -1,13 +1,13 @@
 import { ipcMain, dialog, shell, clipboard, nativeTheme, BrowserWindow, app } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
-import { existsSync, linkSync, mkdirSync, statSync, unlinkSync } from 'fs'
-import { execFile, spawn } from 'child_process'
-import { createHash } from 'crypto'
-import { basename, extname, join } from 'path'
+import { existsSync } from 'fs'
 import { analyzeCached, clearAnalysisCache } from './metadata'
 import { cookieArgs, cookieStatus, forgetCookies } from './cookies'
 import { applyGlobalShortcut, isGlobalShortcutRegistered } from './shortcuts'
 import { downloadManager } from './downloader'
+import { cleanupTelegramMediaPath, shareFile, shareInfo } from './share'
+import { openWithPlayer } from './player'
+import { basename, extname, join } from 'path'
 import { loadSettings, saveSettings } from './settings'
 import { getToolStatus, updateYtdlp, resetToolCache } from './ytdlp'
 import {
@@ -53,124 +53,6 @@ import type {
   DownloadJob,
   StorageStatus
 } from '@shared/types'
-
-const SHARE_SCRIPT = `
-$target = $env:SNAG_SHARE_FILE
-if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { exit 2 }
-$shell = New-Object -ComObject Shell.Application
-$folder = $shell.Namespace((Split-Path -LiteralPath $target -Parent))
-$item = $folder.ParseName((Split-Path -Leaf $target))
-$verb = $item.Verbs() | Where-Object { $_.Name.Replace('&', '') -eq 'Share' } | Select-Object -First 1
-if (-not $verb) { exit 3 }
-$verb.DoIt()
-`
-
-function openWindowsShareSheet(target: string): Promise<string> {
-  if (process.platform !== 'win32') return Promise.resolve('File sharing is currently supported on Windows.')
-  const encoded = Buffer.from(SHARE_SCRIPT, 'utf16le').toString('base64')
-  return new Promise((resolve) => {
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded],
-      { windowsHide: true, timeout: 10000, env: { ...process.env, SNAG_SHARE_FILE: target } },
-      (error) => resolve(error ? 'Windows could not open the Share panel for this file.' : '')
-    )
-  })
-}
-
-function findTelegramExecutable(): string | null {
-  const candidates = [
-    process.env['APPDATA'] && join(process.env['APPDATA'], 'Telegram Desktop', 'Telegram.exe'),
-    process.env['LOCALAPPDATA'] && join(process.env['LOCALAPPDATA'], 'Telegram Desktop', 'Telegram.exe'),
-    process.env['LOCALAPPDATA'] &&
-      join(process.env['LOCALAPPDATA'], 'Programs', 'Telegram Desktop', 'Telegram.exe'),
-    process.env['PROGRAMFILES'] && join(process.env['PROGRAMFILES'], 'Telegram Desktop', 'Telegram.exe'),
-    process.env['PROGRAMFILES(X86)'] &&
-      join(process.env['PROGRAMFILES(X86)'], 'Telegram Desktop', 'Telegram.exe')
-  ].filter((value): value is string => !!value)
-
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
-}
-
-const telegramShareAliases = new Map<string, string>()
-
-function cleanupTelegramMediaPath(target: string): void {
-  const alias = telegramShareAliases.get(target)
-  if (!alias) return
-  telegramShareAliases.delete(target)
-  try {
-    if (existsSync(alias)) unlinkSync(alias)
-  } catch {
-    // A running Telegram process may still have the alias open. The existing
-    // expiry timer will make another best-effort cleanup attempt.
-  }
-}
-
-function prepareTelegramMediaPath(target: string): string {
-  if (extname(target).toLowerCase() !== '.mkv') return target
-
-  try {
-    const source = statSync(target)
-    const key = createHash('sha256')
-      .update(`${target}\0${source.size}\0${source.mtimeMs}`)
-      .digest('hex')
-      .slice(0, 16)
-    const shareDir = join(app.getPath('temp'), 'Snag Telegram Shares', key)
-    const shareTarget = join(shareDir, `${basename(target, extname(target))}.webm`)
-    mkdirSync(shareDir, { recursive: true })
-    if (!existsSync(shareTarget)) linkSync(target, shareTarget)
-    telegramShareAliases.set(target, shareTarget)
-
-    // Telegram reads the alias when its composer opens. Keep it available for
-    // delayed sends, but do not let temporary hard links retain files forever.
-    const cleanup = setTimeout(() => {
-      try {
-        if (existsSync(shareTarget)) unlinkSync(shareTarget)
-      } catch {
-        // The OS temp cleaner or a later share may already have removed it.
-      } finally {
-        if (telegramShareAliases.get(target) === shareTarget) {
-          telegramShareAliases.delete(target)
-        }
-      }
-    }, 6 * 60 * 60 * 1000)
-    cleanup.unref()
-
-    return shareTarget
-  } catch {
-    // Cross-volume and non-NTFS locations may not support hard links. Sending
-    // the original MKV as a document is safer than copying a very large file.
-    return target
-  }
-}
-
-const recentTelegramShares = new Map<string, number>()
-
-function shareFile(target: string): Promise<string> {
-  if (process.platform !== 'win32') return openWindowsShareSheet(target)
-
-  const telegram = findTelegramExecutable()
-  if (!telegram) return openWindowsShareSheet(target)
-  const now = Date.now()
-  if (now - (recentTelegramShares.get(target) ?? 0) < 2000) return Promise.resolve('')
-  recentTelegramShares.set(target, now)
-  const telegramTarget = prepareTelegramMediaPath(target)
-
-  return new Promise((resolve) => {
-    const child = spawn(telegram, ['--', telegramTarget], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: false
-    })
-    child.once('spawn', () => {
-      child.unref()
-      resolve('')
-    })
-    child.once('error', () => {
-      void openWindowsShareSheet(target).then(resolve)
-    })
-  })
-}
 
 function broadcast(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -264,12 +146,53 @@ export function registerIpc(): void {
     return downloadManager.deleteAllCompletedFiles()
   })
 
-  handleTrusted('shareFile', async (_e, jobId: string): Promise<string> => {
+  handleTrusted('shareFile', async (_e, jobId: string, targetId?: string): Promise<string> => {
     const job = downloadManager.getJob(jobId)
     if (!job || job.status !== 'completed' || !job.filepath || !existsSync(job.filepath)) {
       return 'The completed file could not be found.'
     }
-    return shareFile(job.filepath)
+    return shareFile(job.filepath, typeof targetId === 'string' ? targetId : undefined)
+  })
+
+  handleTrusted('getShareInfo', async () => shareInfo())
+
+  handleTrusted('playFile', async (_e, jobId: string): Promise<string> => {
+    const job = downloadManager.getJob(jobId)
+    if (!job || job.status !== 'completed' || !job.filepath || !existsSync(job.filepath)) {
+      return 'The completed file could not be found.'
+    }
+    return openWithPlayer(job.filepath)
+  })
+
+  handleTrusted('pickShareApp', async (e): Promise<{ path: string; label: string } | null> => {
+    const win = BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow()
+    // The Start Menu's Programs folder lists installed apps as shortcuts, which
+    // is where people know their apps by name; shortcuts resolve to the program.
+    const programs = process.env['APPDATA']
+      ? join(process.env['APPDATA'], 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+      : undefined
+    const opts: Electron.OpenDialogOptions = {
+      title: 'Choose an app that can receive a file',
+      defaultPath: programs && existsSync(programs) ? programs : undefined,
+      properties: ['openFile'],
+      filters: [
+        { name: 'Apps and shortcuts', extensions: ['lnk', 'exe', 'bat', 'cmd'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    }
+    const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    if (result.canceled || result.filePaths.length === 0) return null
+    const chosen = result.filePaths[0]
+    let path = chosen
+    if (extname(chosen).toLowerCase() === '.lnk') {
+      try {
+        path = shell.readShortcutLink(chosen).target
+      } catch {
+        return null
+      }
+    }
+    if (!path || !existsSync(path)) return null
+    return { path, label: basename(chosen, extname(chosen)) || basename(path, extname(path)) }
   })
 
   handleTrusted('removeJob', async (_e, jobId: string): Promise<void> => {

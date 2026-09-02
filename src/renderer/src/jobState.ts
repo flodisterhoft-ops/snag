@@ -19,6 +19,8 @@ export function applyProgressUpdate(
           eta: update.eta,
           sizeLabel: update.sizeLabel,
           itemLabel: update.itemLabel ?? job.itemLabel,
+          // null clears the phase (back to downloading); undefined keeps it.
+          phase: update.phase !== undefined ? update.phase : job.phase,
           filepath: update.filepath ?? job.filepath,
           errorMessage: update.errorMessage ?? job.errorMessage,
           completedAt: update.status === 'completed' ? now : job.completedAt

@@ -51,6 +51,30 @@
           "sha256": "a0e976df3cf1d781264c41db8ee3421978c1278be92ed00edbc96337529670be"
         }
       ]
+    },
+    {
+      "id": "aria2",
+      "version": "1.37.0-win-64bit-build1",
+      "project": "https://aria2.github.io/",
+      "source": "https://github.com/aria2/aria2/tree/release-1.37.0",
+      "license": "GPL-2.0-or-later WITH OpenSSL-exception",
+      "download": {
+        "kind": "zip",
+        "url": "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip",
+        "sha256": "67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288"
+      },
+      "files": [
+        {
+          "path": "aria2-1.37.0-win-64bit-build1/aria2c.exe",
+          "output": "aria2c.exe",
+          "sha256": "be2099c214f63a3cb4954b09a0becd6e2e34660b886d4c898d260febfe9d70c2"
+        },
+        {
+          "path": "aria2-1.37.0-win-64bit-build1/COPYING",
+          "output": "aria2-COPYING.txt",
+          "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+        }
+      ]
     }
   ],
   "supportFiles": [

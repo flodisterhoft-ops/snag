@@ -1,4 +1,4 @@
-# FFmpeg binary and source record
+# FFmpeg and aria2 binaries and source record
 
 Snag's Windows package contains `ffmpeg.exe` from the **FFmpeg 8.0.1
 essentials build by gyan.dev**. The binary is a separate command-line program;
@@ -42,6 +42,25 @@ distributes the FFmpeg binary.
 
 The provider's `ffmpeg-BUILD-README.txt` records the compiler, complete FFmpeg
 configuration, and exact versions of the statically linked dependencies.
+
+## aria2
+
+Snag's package also contains `aria2c.exe` from the upstream **aria2 1.37.0
+win-64bit-build1** release, used as yt-dlp's external downloader when the
+"aria2" engine is selected. It is a separate command-line program.
+
+- Release: <https://github.com/aria2/aria2/releases/tag/release-1.37.0>
+- Archive: `aria2-1.37.0-win-64bit-build1.zip`
+- Archive SHA-256: `67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288`
+- Extracted `aria2c.exe` SHA-256:
+  `be2099c214f63a3cb4954b09a0becd6e2e34660b886d4c898d260febfe9d70c2`
+- License: GPL-2.0-or-later with the OpenSSL exception (`aria2-COPYING.txt`)
+- Exact source: <https://github.com/aria2/aria2/tree/release-1.37.0>; the
+  archive's `README.mingw` lists the statically linked dependencies of the
+  upstream Windows build.
+
+The same Corresponding Source obligation described below applies to this
+binary.
 
 ## Distribution requirement
 

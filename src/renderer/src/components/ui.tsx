@@ -1,4 +1,5 @@
-import { ReactNode, useEffect } from 'react'
+import { CSSProperties, ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 export type IconName =
   | 'download'
@@ -233,6 +234,34 @@ export function Spinner({ size = 16 }: { size?: number }): JSX.Element {
 interface SegOption<T extends string> {
   value: T
   label: ReactNode
+  // Tooltip explaining the option, shown as soon as the pointer rests on it.
+  hint?: string
+  // Marks the option with a green star inside the button.
+  recommended?: boolean
+}
+
+// Hover/focus tooltip for a segmented option: a small bubble above the button,
+// rendered into document.body so section borders and scroll areas cannot clip
+// it. Native title tooltips take a second to appear; this one is instant.
+function SegTip({ text, anchor }: { text: string; anchor: HTMLElement }): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  const [style, setStyle] = useState<CSSProperties>({ visibility: 'hidden' })
+  useLayoutEffect(() => {
+    const tip = ref.current
+    if (!tip) return
+    const r = anchor.getBoundingClientRect()
+    const width = tip.offsetWidth
+    const margin = 8
+    const left = Math.min(Math.max(margin, r.left + r.width / 2 - width / 2), window.innerWidth - width - margin)
+    const above = r.top - tip.offsetHeight - 8
+    setStyle(above >= margin ? { left, top: above } : { left, top: r.bottom + 8 })
+  }, [anchor, text])
+  return createPortal(
+    <div ref={ref} className="seg-tip" role="tooltip" style={style}>
+      {text}
+    </div>,
+    document.body
+  )
 }
 
 export function Segmented<T extends string>({
@@ -246,6 +275,10 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void
   size?: 'sm' | 'md'
 }): JSX.Element {
+  const [tip, setTip] = useState<{ text: string; anchor: HTMLElement } | null>(null)
+  const show = (o: SegOption<T>, el: HTMLElement): void => {
+    if (o.hint) setTip({ text: o.hint, anchor: el })
+  }
   return (
     <div className={`segmented ${size === 'sm' ? 'segmented-sm' : ''}`} role="tablist">
       {options.map((o) => (
@@ -253,12 +286,22 @@ export function Segmented<T extends string>({
           key={o.value}
           role="tab"
           aria-selected={value === o.value}
-          className={`seg-btn ${value === o.value ? 'active' : ''}`}
+          className={`seg-btn ${value === o.value ? 'active' : ''} ${o.recommended ? 'recommended' : ''}`}
           onClick={() => onChange(o.value)}
+          onMouseEnter={(e) => show(o, e.currentTarget)}
+          onMouseLeave={() => setTip(null)}
+          onFocus={(e) => show(o, e.currentTarget)}
+          onBlur={() => setTip(null)}
         >
+          {o.recommended && (
+            <svg className="seg-star" viewBox="0 0 24 24" aria-label="Recommended" role="img">
+              <path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6L2.5 9.4l6.6-.8z" />
+            </svg>
+          )}
           {o.label}
         </button>
       ))}
+      {tip && <SegTip text={tip.text} anchor={tip.anchor} />}
     </div>
   )
 }
@@ -334,5 +377,202 @@ export function Modal({
         <div className="modal-body">{children}</div>
       </div>
     </div>
+  )
+}
+
+// A whole-row checkbox: box on the left, icon + label + small hint, green when on.
+export function CheckRow({
+  checked,
+  onChange,
+  icon,
+  label,
+  hint
+}: {
+  checked: boolean
+  onChange: () => void
+  icon?: IconName
+  label: string
+  hint?: string
+}): JSX.Element {
+  return (
+    <button
+      className={`opt ${checked ? 'on' : ''}`}
+      role="checkbox"
+      aria-checked={checked}
+      title={hint}
+      onClick={onChange}
+    >
+      <span className="opt-box">
+        <Icon name="check" size={12} />
+      </span>
+      {icon && <Icon name={icon} size={15} />}
+      <span className="opt-text">
+        <span className="opt-label">{label}</span>
+        {hint && <span className="opt-hint">{hint}</span>}
+      </span>
+    </button>
+  )
+}
+
+// Logos for the built-in share targets; custom apps bring their own icon.
+export function AppIcon({
+  kind,
+  icon,
+  size = 22
+}: {
+  kind: 'telegram' | 'windows' | 'custom' | 'add'
+  icon?: string | null
+  size?: number
+}): JSX.Element {
+  if (kind === 'custom' && icon) {
+    return <img className="app-icon" src={icon} width={size} height={size} alt="" />
+  }
+  if (kind === 'telegram') {
+    return (
+      <svg className="app-icon" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="12" fill="#2AABEE" />
+        <path
+          d="M5.4 11.6l11.6-4.5c.5-.2 1 .1.8.9l-2 9.3c-.1.7-.6.8-1.1.5l-3-2.2-1.5 1.4c-.2.2-.3.3-.6.3l.2-3.1 5.6-5.1c.2-.2 0-.3-.3-.1l-7 4.4-3-.9c-.7-.2-.7-.7.3-.9z"
+          fill="#fff"
+        />
+      </svg>
+    )
+  }
+  if (kind === 'windows') {
+    return (
+      <svg className="app-icon" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="2" y="2" width="20" height="20" rx="5" fill="#0a5bd6" />
+        <path d="M6 7.3l5-.7v5H6zM12 6.5l6-.9V11.6h-6zM6 12.4h5v5l-5-.7zM12 12.4h6v6l-6-.9z" fill="#fff" />
+      </svg>
+    )
+  }
+  if (kind === 'add') {
+    return (
+      <svg className="app-icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+    )
+  }
+  return (
+    <svg className="app-icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="4" width="16" height="16" rx="4" />
+      <path d="M9 12h6M12 9v6" />
+    </svg>
+  )
+}
+
+export interface SharePickerTarget {
+  id: string
+  label: string
+  kind: 'telegram' | 'windows' | 'custom'
+  icon?: string | null
+}
+
+// Stacked menu of share apps that slides out of a Share button: one row per
+// app with its logo, and a last row to add another program. Closes on
+// Escape, on an outside click, and after a pick. It is rendered into
+// document.body at a fixed position next to the button (the element the
+// enclosing .share-wrap holds) so scroll areas and the window edge cannot cut
+// it off; it follows the button while the list scrolls, opens in the preferred
+// direction, and flips when there is no room.
+export function SharePicker({
+  targets,
+  onPick,
+  onAdd,
+  onClose,
+  direction = 'down'
+}: {
+  targets: SharePickerTarget[]
+  onPick: (id: string) => void
+  onAdd?: () => void
+  onClose: () => void
+  direction?: 'up' | 'down'
+}): JSX.Element {
+  const anchorRef = useRef<HTMLSpanElement>(null)
+  const popRef = useRef<HTMLDivElement>(null)
+  const [style, setStyle] = useState<CSSProperties>({ visibility: 'hidden' })
+  // Bumped on scroll and resize so the menu is placed again next to the button.
+  const [placement, setPlacement] = useState(0)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    const onDoc = (): void => onClose()
+    const onMove = (): void => setPlacement((n) => n + 1)
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('resize', onMove)
+    document.addEventListener('scroll', onMove, true)
+    const timer = window.setTimeout(() => document.addEventListener('click', onDoc), 0)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', onMove)
+      document.removeEventListener('scroll', onMove, true)
+      window.clearTimeout(timer)
+      document.removeEventListener('click', onDoc)
+    }
+  }, [onClose])
+
+  useLayoutEffect(() => {
+    const wrap = anchorRef.current?.parentElement
+    const pop = popRef.current
+    if (!wrap || !pop) return
+    const rect = wrap.getBoundingClientRect()
+    const height = pop.offsetHeight
+    const gap = 6
+    const margin = 8
+    const roomBelow = window.innerHeight - rect.bottom - gap - margin
+    const roomAbove = rect.top - gap - margin
+    const up =
+      direction === 'up'
+        ? roomAbove >= height || roomAbove >= roomBelow
+        : roomBelow < height && roomAbove > roomBelow
+    const right = Math.max(margin, window.innerWidth - rect.right)
+    setStyle(
+      up
+        ? { right, bottom: Math.max(margin, window.innerHeight - rect.top + gap) }
+        : { right, top: Math.max(margin, rect.bottom + gap) }
+    )
+  }, [direction, targets.length, placement])
+
+  return (
+    <>
+      <span ref={anchorRef} hidden />
+      {createPortal(
+        <div
+          ref={popRef}
+          className="share-pop"
+          style={style}
+          role="menu"
+          aria-label="Share with"
+          onClick={(e) => e.stopPropagation()}
+        >
+      {targets.map((t, i) => (
+        <button
+          key={t.id}
+          role="menuitem"
+          className="share-item"
+          style={{ animationDelay: `${i * 35}ms` }}
+          onClick={() => onPick(t.id)}
+        >
+          <AppIcon kind={t.kind} icon={t.icon} size={20} />
+          <span>{t.label}</span>
+        </button>
+      ))}
+      {onAdd && (
+        <button
+          role="menuitem"
+          className="share-item add"
+          style={{ animationDelay: `${targets.length * 35}ms` }}
+          onClick={onAdd}
+        >
+          <AppIcon kind="add" size={20} />
+          <span>Add an app…</span>
+        </button>
+      )}
+        </div>,
+        document.body
+      )}
+    </>
   )
 }

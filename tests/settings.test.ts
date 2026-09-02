@@ -40,7 +40,15 @@ const valid: Settings = {
   sponsorBlock: { remove: ['sponsor'], mark: ['intro'] },
   theme: 'light',
   quickWindowSize: { width: 500, height: 700 },
-  openWhenDone: true
+  openWhenDone: true,
+  shareTargets: [
+    { id: 'windows', kind: 'windows', label: 'Windows share panel', path: null, enabled: false },
+    { id: 'telegram', kind: 'telegram', label: 'Telegram', path: null, enabled: true },
+    { id: 'custom_abc', kind: 'custom', label: 'BiP', path: 'C:/Apps/BiP/BiP.exe', enabled: true }
+  ],
+  shareAsk: false,
+  downloadEngine: 'aria2',
+  player: 'system'
 }
 
 describe('sanitizeSettings', () => {

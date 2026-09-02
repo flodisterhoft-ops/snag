@@ -9,3 +9,5 @@ build/tools/ffmpeg*
 .codex/
 .agents/
 audit/
+build/tools/aria2*
+.claude/launch.json

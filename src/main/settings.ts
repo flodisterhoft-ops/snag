@@ -9,8 +9,8 @@ import {
   SPEED_LIMIT_UNITS,
   SPONSORBLOCK_CATEGORIES,
   THEMES,
-  VIDEO_CONTAINERS
-} from '@shared/types'
+  VIDEO_CONTAINERS, DEFAULT_SHARE_TARGETS, SHARE_TARGET_KINDS, DOWNLOAD_ENGINES, PLAYERS } from '@shared/types'
+import type { ShareTarget } from '@shared/types'
 import type { Settings, SponsorBlockCategory } from '@shared/types'
 
 function defaultSettings(): Settings {
@@ -55,7 +55,11 @@ function defaultSettings(): Settings {
     sponsorBlock: { remove: [], mark: [] },
     theme: 'system',
     quickWindowSize: null,
-    openWhenDone: false
+    openWhenDone: false,
+    shareTargets: DEFAULT_SHARE_TARGETS.map((t) => ({ ...t })),
+    shareAsk: true,
+    downloadEngine: 'native',
+    player: 'vlc'
   }
 }
 
@@ -68,6 +72,34 @@ function pickCategories(value: unknown): SponsorBlockCategory[] {
     if (typeof item === 'string' && SPONSORBLOCK_IDS.includes(item) && !picked.includes(item as SponsorBlockCategory)) {
       picked.push(item as SponsorBlockCategory)
     }
+  }
+  return picked
+}
+
+// Share targets from disk: built-ins keep their identity (labels and kinds
+// are not user data), custom ones need a usable executable path.
+function pickShareTargets(value: unknown, fallback: ShareTarget[]): ShareTarget[] {
+  if (!Array.isArray(value)) return fallback.map((t) => ({ ...t }))
+  const picked: ShareTarget[] = []
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.id !== 'string' || !item.id) continue
+    const kind = SHARE_TARGET_KINDS.includes(item.kind as ShareTarget['kind']) ? (item.kind as ShareTarget['kind']) : null
+    if (!kind || picked.some((t) => t.id === item.id)) continue
+    const enabled = typeof item.enabled === 'boolean' ? item.enabled : true
+    if (kind === 'custom') {
+      if (typeof item.path !== 'string' || !item.path.trim()) continue
+      const label = typeof item.label === 'string' && item.label.trim() ? item.label.trim().slice(0, 40) : 'App'
+      picked.push({ id: item.id.slice(0, 64), kind, label, path: item.path, enabled })
+    } else {
+      const builtin = fallback.find((t) => t.kind === kind)
+      if (!builtin) continue
+      picked.push({ ...builtin, enabled })
+    }
+  }
+  // Built-ins the file forgot come back disabled-by-default? No: enabled, so a
+  // newly added built-in shows up for existing users.
+  for (const builtin of fallback) {
+    if (!picked.some((t) => t.kind === builtin.kind)) picked.push({ ...builtin })
   }
   return picked
 }
@@ -194,7 +226,11 @@ export function sanitizeSettings(raw: unknown): Settings {
           height: Math.round(clampNumber(quick.height, 480, 1600, 640))
         }
       : null,
-    openWhenDone: pickBoolean(raw.openWhenDone, defaults.openWhenDone)
+    openWhenDone: pickBoolean(raw.openWhenDone, defaults.openWhenDone),
+    shareTargets: pickShareTargets(raw.shareTargets, defaults.shareTargets),
+    shareAsk: pickBoolean(raw.shareAsk, defaults.shareAsk),
+    downloadEngine: pickEnum(raw.downloadEngine, DOWNLOAD_ENGINES, defaults.downloadEngine),
+    player: pickEnum(raw.player, PLAYERS, defaults.player)
   }
 }
 

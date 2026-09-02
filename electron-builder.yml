@@ -21,6 +21,8 @@ extraResources:
       - ffmpeg.exe
       - ffmpeg-COPYING.GPLv3.txt
       - ffmpeg-BUILD-README.txt
+      - aria2c.exe
+      - aria2-COPYING.txt
       - TOOLS_MANIFEST.json
       - THIRD_PARTY_TOOLS.txt
       - SOURCE_COMPLIANCE.md

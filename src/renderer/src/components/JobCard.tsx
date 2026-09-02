@@ -1,6 +1,6 @@
 import type { DownloadJob } from '@shared/types'
-import { Icon } from './ui'
-import { formatDownloadSpeed, shortPath } from '../lib/format'
+import { Icon, SharePicker } from './ui'
+import { formatDownloadSpeed } from '../lib/format'
 import { useStore } from '../store'
 import { useState } from 'react'
 
@@ -15,7 +15,21 @@ const STATUS_LABEL: Record<DownloadJob['status'], string> = {
 }
 
 export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
-  const { removeJob, deleteJobFile } = useStore()
+  const { removeJob, deleteJobFile, shareInfo, settings, updateSettings } = useStore()
+
+  // "Add an app…" inside the share menu: pick a program, register it, share.
+  const addAppAndShare = async (): Promise<void> => {
+    setPickShare(false)
+    const picked = await window.api.pickShareApp()
+    if (!picked || !settings) return
+    const id = `custom_${Date.now().toString(36)}`
+    await updateSettings({
+      shareTargets: [...settings.shareTargets, { id, kind: 'custom', label: picked.label, path: picked.path, enabled: true }]
+    })
+    void shareDownloadedFile(id)
+  }
+  const shareTargets = shareInfo?.targets.filter((t) => t.enabled && t.installed) ?? []
+  const [pickShare, setPickShare] = useState(false)
   const { status } = job
   const isActive = status === 'downloading' || status === 'processing'
   const pct = Math.round(job.progress)
@@ -35,12 +49,22 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
     }
   }
 
-  const shareDownloadedFile = async (): Promise<void> => {
+  const playDownloadedFile = async (): Promise<void> => {
+    setActionError(null)
+    try {
+      const error = await window.api.playFile(job.id)
+      if (error) setActionError(error)
+    } catch (err) {
+      setActionError((err as Error).message || 'Could not start the player.')
+    }
+  }
+
+  const shareDownloadedFile = async (targetId?: string): Promise<void> => {
     if (sharing) return
     setActionError(null)
     setSharing(true)
     try {
-      const error = await window.api.shareFile(job.id)
+      const error = await window.api.shareFile(job.id, targetId)
       if (error) setActionError(error)
     } catch (err) {
       setActionError((err as Error).message || 'Windows could not share this file.')
@@ -59,6 +83,7 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
   const extras: string[] = []
   if (job.request.section) extras.push('trimmed')
   if (job.request.openWhenDone) extras.push('opens when done')
+  if (job.request.shareWhenDone) extras.push('shares when done')
 
   return (
     <div className={`job-card ${status}`}>
@@ -79,12 +104,6 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
         <div className="job-top">
           <span className="job-title" title={job.request.title}>
             {job.request.title}
-          </span>
-          <span className={`job-status ${status}`}>
-            {status === 'completed' && <Icon name="check" size={13} />}
-            {status === 'error' && <Icon name="alert" size={13} />}
-            {status === 'paused' && <Icon name="pause" size={13} />}
-            {STATUS_LABEL[status]}
           </span>
         </div>
 
@@ -112,16 +131,11 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
               {job.itemLabel && <span className="dim">{job.itemLabel}</span>}
             </>
           )}
-          {status === 'processing' && <span className="job-pct">Merging & finishing…</span>}
+          {status === 'processing' && <span className="job-pct">{job.phase || 'Finishing'}…</span>}
           {status === 'queued' && <span className="dim">Waiting in queue…</span>}
           {status === 'paused' && (
             <span className="dim">
               Paused at {pct}% — resume continues where it stopped
-            </span>
-          )}
-          {status === 'completed' && job.filepath && (
-            <span className="dim" title={job.filepath}>
-              {shortPath(job.filepath, 48)}
             </span>
           )}
           {status === 'error' && <span className="job-error">{job.errorMessage}</span>}
@@ -131,6 +145,13 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
       </div>
 
       <div className="job-actions">
+        <span className={`job-status ${status}`}>
+          {status === 'completed' && <Icon name="check" size={13} />}
+          {status === 'error' && <Icon name="alert" size={13} />}
+          {status === 'paused' && <Icon name="pause" size={13} />}
+          {STATUS_LABEL[status]}
+        </span>
+        <div className="job-buttons">
         {(isActive || status === 'queued') && (
           <>
             <button className="icon-btn" title="Pause" onClick={() => void window.api.pauseJob(job.id)}>
@@ -154,17 +175,46 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
         {status === 'completed' && (
           <>
             <button
-              className="icon-btn"
-              title="Share (Telegram, or the Windows Share panel)"
-              disabled={sharing}
-              onClick={() => void shareDownloadedFile()}
+              className="icon-btn accent"
+              title={`Play in ${shareInfo?.player ?? 'the default player'}`}
+              onClick={() => void playDownloadedFile()}
             >
-              <Icon name="share" size={16} />
+              <Icon name="play" size={16} />
             </button>
-            <button className="icon-btn" title="Open file" onClick={() => void openDownloadedPath(false)}>
-              <Icon name="open" size={16} />
-            </button>
-            <button className="icon-btn" title="Show in folder" onClick={() => void openDownloadedPath(true)}>
+            <span className="share-wrap">
+              <button
+                className="icon-btn"
+                title={
+                  shareInfo?.ask && shareTargets.length > 1
+                    ? 'Share…'
+                    : `Share with ${shareTargets[0]?.label ?? 'the Windows share panel'}`
+                }
+                disabled={sharing}
+                onClick={() =>
+                  shareInfo?.ask && shareTargets.length > 1
+                    ? setPickShare((v) => !v)
+                    : void shareDownloadedFile(shareTargets[0]?.id)
+                }
+              >
+                <Icon name="share" size={16} />
+              </button>
+              {pickShare && (
+                <SharePicker
+                  targets={shareTargets}
+                  onPick={(id) => {
+                    setPickShare(false)
+                    void shareDownloadedFile(id)
+                  }}
+                  onAdd={() => void addAppAndShare()}
+                  onClose={() => setPickShare(false)}
+                />
+              )}
+            </span>
+            <button
+              className="icon-btn"
+              title={job.filepath ? `Show in folder\n${job.filepath}` : 'Show in folder'}
+              onClick={() => void openDownloadedPath(true)}
+            >
               <Icon name="folder" size={16} />
             </button>
             <button className="icon-btn danger" title="Delete file from disk" onClick={() => void deleteDownloadedFile()}>
@@ -185,6 +235,7 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
             </button>
           </>
         )}
+        </div>
       </div>
     </div>
   )

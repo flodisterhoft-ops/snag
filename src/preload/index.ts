@@ -79,7 +79,10 @@ const api: Api = {
   relaunchOutsideSandbox: () => ipcRenderer.invoke('relaunchOutsideSandbox'),
   deleteJobFile: (jobId: string) => ipcRenderer.invoke('deleteJobFile', jobId),
   deleteCompletedFiles: () => ipcRenderer.invoke('deleteCompletedFiles'),
-  shareFile: (jobId: string) => ipcRenderer.invoke('shareFile', jobId),
+  shareFile: (jobId: string, targetId?: string) => ipcRenderer.invoke('shareFile', jobId, targetId),
+  getShareInfo: () => ipcRenderer.invoke('getShareInfo'),
+  pickShareApp: () => ipcRenderer.invoke('pickShareApp'),
+  playFile: (jobId: string) => ipcRenderer.invoke('playFile', jobId),
   checkForUpdates: () => ipcRenderer.invoke('checkForUpdates'),
   dismissUpdates: () => ipcRenderer.invoke('dismissUpdates'),
   onUpdateAvailable: (cb: (u: UpdateAvailability) => void) => {

@@ -12,6 +12,7 @@ import {
   setWindowIdleProbe
 } from './windows'
 import { createTray, setTrayActiveCount } from './tray'
+import { updateTaskbar } from './taskbar'
 import { loadSettings } from './settings'
 import { downloadManager } from './downloader'
 import { checkForUpdates, shouldAutoCheck } from './updates'
@@ -59,6 +60,12 @@ function openJobFile(id: string, action: 'open' | 'reveal'): void {
 function routeDeepLink(link: DeepLink): void {
   if (link.kind === 'job') {
     openJobFile(link.id, link.action)
+    return
+  }
+  if (link.kind === 'open') {
+    // The browser panel only needs the local API up. Stay in the tray when
+    // that is how Snag lives anyway; otherwise a window is the only sign of life.
+    if (!loadSettings().runInBackground) ensureMainWindow()
     return
   }
   console.log('[snag] browser handoff:', link.url)
@@ -134,10 +141,10 @@ if (!gotLock) {
     }
 
     const updateTray = (): void => {
-      const active = downloadManager
-        .getJobs()
-        .filter((j) => j.status === 'downloading' || j.status === 'processing').length
+      const jobs = downloadManager.getJobs()
+      const active = jobs.filter((j) => j.status === 'downloading' || j.status === 'processing').length
       setTrayActiveCount(active)
+      updateTaskbar(jobs)
     }
     downloadManager.on('added', updateTray)
     downloadManager.on('progress', () => {

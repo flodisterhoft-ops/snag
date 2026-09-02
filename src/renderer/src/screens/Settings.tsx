@@ -10,11 +10,14 @@ import type {
   GlobalShortcutStatus,
   SettingsSection,
   SponsorBlockCategory,
+  ShareTarget,
+  DownloadEngine,
+  Player,
   Theme
 } from '@shared/types'
 import { SPONSORBLOCK_CATEGORIES } from '@shared/types'
 import { useStore } from '../store'
-import { Icon, IconName, Segmented, Spinner, Toggle } from '../components/ui'
+import { AppIcon, Icon, IconName, Segmented, Spinner, Toggle } from '../components/ui'
 import { ExtensionSetup } from '../components/ExtensionSetup'
 import { relativeTime, shortPath } from '../lib/format'
 
@@ -28,10 +31,10 @@ const TEMPLATE_PRESETS = [
 // order; the saved array records the user's own preference order.
 const AUDIO_LANGUAGES: { code: string; label: string }[] = [
   { code: 'en', label: 'English' },
-  { code: 'es', label: 'Spanish' },
   { code: 'de', label: 'German' },
-  { code: 'fr', label: 'French' },
   { code: 'ru', label: 'Russian' },
+  { code: 'es', label: 'Spanish' },
+  { code: 'fr', label: 'French' },
   { code: 'pt', label: 'Portuguese' },
   { code: 'it', label: 'Italian' },
   { code: 'hi', label: 'Hindi' },
@@ -79,19 +82,93 @@ function Section({ title, children }: { title?: string; children: ReactNode }): 
   )
 }
 
+// A settings row whose value is a set of language pills; clicking one opens a
+// drawer with every language below the row. `collapseOnPick` closes it after
+// one choice (default subtitle language); otherwise it stays open so several
+// languages can be picked in order.
+function LanguageRow({
+  title,
+  desc,
+  selected,
+  onToggle,
+  open,
+  setOpen,
+  collapseOnPick,
+  className
+}: {
+  title: string
+  desc: string
+  selected: string[]
+  onToggle: (code: string) => void
+  open: boolean
+  setOpen: (open: boolean) => void
+  collapseOnPick: boolean
+  className?: string
+}): JSX.Element {
+  const labelFor = (code: string): string =>
+    AUDIO_LANGUAGES.find((l) => l.code === baseCode(code))?.label ?? code.toUpperCase()
+  return (
+    <>
+      <Row title={title} desc={desc} className={`${open ? 'open' : ''} ${className ?? ''}`}>
+        <div className="sub-lang-chips">
+          {selected.length === 0 && (
+            <button className="chip chip-sm chip-more" onClick={() => setOpen(!open)}>
+              Choose…
+            </button>
+          )}
+          {selected.map((code) => (
+            <button
+              key={code}
+              className="chip chip-sm active"
+              title="Change"
+              aria-expanded={open}
+              onClick={() => setOpen(!open)}
+            >
+              {labelFor(code)}
+              <Icon name="chevron" size={13} />
+            </button>
+          ))}
+        </div>
+      </Row>
+      {open && (
+        <div className="lang-drawer">
+          {AUDIO_LANGUAGES.map((l, i) => {
+            const on = selected.some((c) => baseCode(c) === l.code)
+            return (
+              <button
+                key={l.code}
+                className={`chip chip-sm ${on ? 'active' : ''}`}
+                style={{ animationDelay: `${i * 18}ms` }}
+                onClick={() => {
+                  onToggle(l.code)
+                  if (collapseOnPick) setOpen(false)
+                }}
+              >
+                {l.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </>
+  )
+}
+
 function Row({
   title,
   desc,
   children,
-  stacked
+  stacked,
+  className
 }: {
   title: string
   desc?: string
   children: ReactNode
   stacked?: boolean
+  className?: string
 }): JSX.Element {
   return (
-    <div className={`set-row ${stacked ? 'stacked' : ''}`}>
+    <div className={`set-row ${stacked ? 'stacked' : ''} ${className ?? ''}`}>
       <div className="set-row-text">
         <span className="set-row-title">{title}</span>
         {desc && <span className="set-row-desc">{desc}</span>}
@@ -109,7 +186,8 @@ export function SettingsScreen(): JSX.Element {
     refreshTools,
     setUpdates,
     settingsSection,
-    setSettingsSection
+    setSettingsSection,
+    shareInfo
   } = useStore()
   const [form, setForm] = useState<Settings | null>(settings)
   // Settings can change behind this screen (the Chrome panel saves audio
@@ -121,7 +199,9 @@ export function SettingsScreen(): JSX.Element {
   const [updating, setUpdating] = useState(false)
   const [updateOutput, setUpdateOutput] = useState<string | null>(null)
   // Local editable buffer so in-progress commas/spaces aren't normalized mid-keystroke.
-  const [subLangText, setSubLangText] = useState(settings?.subtitles.languages.join(', ') ?? '')
+  // The language drawers under their rows (pills slide in from the right).
+  const [subDrawerOpen, setSubDrawerOpen] = useState(false)
+  const [audioDrawerOpen, setAudioDrawerOpen] = useState(false)
 
   // Free-text fields keep a local buffer and commit on blur, so typing a space
   // or clearing the field is never normalized away mid-keystroke.
@@ -178,8 +258,6 @@ export function SettingsScreen(): JSX.Element {
 
   const audioLangs = form.multiAudio.languages
   const audioBaseSet = new Set(audioLangs.map(baseCode))
-  const knownAudioBases = new Set(AUDIO_LANGUAGES.map((l) => l.code))
-  const extraAudioLangs = audioLangs.filter((l) => !knownAudioBases.has(baseCode(l)))
   const toggleAudioLang = (code: string): void => {
     const base = baseCode(code)
     const next = audioBaseSet.has(base)
@@ -190,10 +268,17 @@ export function SettingsScreen(): JSX.Element {
 
   const isCustomTemplate =
     customTemplate || !TEMPLATE_PRESETS.some((p) => p.value === form.filenameTemplate)
-  const maximumSpeedActive =
-    form.parallelDownloads === 1 &&
-    form.concurrentFragments === 8 &&
-    !form.speedLimit.enabled
+
+  const setShareTarget = (id: string, patch: Partial<ShareTarget>): void => {
+    set({ shareTargets: form.shareTargets.map((t) => (t.id === id ? { ...t, ...patch } : t)) })
+  }
+
+  const addShareApp = async (): Promise<void> => {
+    const picked = await window.api.pickShareApp()
+    if (!picked) return
+    const id = `custom_${Date.now().toString(36)}`
+    set({ shareTargets: [...form.shareTargets, { id, kind: 'custom', label: picked.label, path: picked.path, enabled: true }] })
+  }
 
   const chooseFolder = async (): Promise<void> => {
     const dir = await window.api.pickFolder(form.defaultSaveDir)
@@ -263,8 +348,9 @@ export function SettingsScreen(): JSX.Element {
       </nav>
 
       {activeTab.id === 'general' && (
+        <>
         <Section>
-          <Row title="Default save folder" desc={form.defaultSaveDir} stacked>
+          <Row title="Default save folder" desc={form.defaultSaveDir}>
             <button className="btn-outline" onClick={chooseFolder}>
               <Icon name="folder" size={15} /> Choose folder
             </button>
@@ -333,29 +419,109 @@ export function SettingsScreen(): JSX.Element {
             />
           </Row>
         </Section>
+
+        <Section title="Sharing & playback">
+          <Row
+            title="Share with"
+            desc="The apps offered by every Share button. Switch off the ones you never use; add any program that opens a file you hand it."
+            stacked
+          >
+            <div className="share-cards">
+              {form.shareTargets.map((t) => {
+                const status = shareInfo?.targets.find((x) => x.id === t.id)
+                const missing = !!status && !status.installed
+                const hint =
+                  t.kind === 'custom'
+                    ? t.path ?? ''
+                    : t.kind === 'windows'
+                      ? 'Phone Link, Bluetooth, Mail, WhatsApp and every other share target on this PC'
+                      : 'Opens a Telegram chat with the file attached'
+                return (
+                  <div
+                    key={t.id}
+                    className={`share-card ${missing ? 'missing' : ''} ${t.enabled && !missing ? 'on' : ''}`}
+                    title={missing ? `${t.label} is not installed` : hint}
+                  >
+                    <AppIcon kind={t.kind} icon={status?.icon} size={24} />
+                    <span className="share-card-name">{t.label}</span>
+                    {missing ? (
+                      <span className="share-card-status">Not installed</span>
+                    ) : (
+                      <Toggle checked={t.enabled} onChange={(v) => setShareTarget(t.id, { enabled: v })} label={t.label} />
+                    )}
+                    {t.kind === 'custom' && (
+                      <button
+                        className="icon-btn share-card-remove"
+                        title="Remove"
+                        onClick={() => set({ shareTargets: form.shareTargets.filter((x) => x.id !== t.id) })}
+                      >
+                        <Icon name="close" size={13} />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+              <button className="share-card add" title="Any program that takes a file" onClick={() => void addShareApp()}>
+                <AppIcon kind="add" size={24} />
+                <span className="share-card-name">Add an app</span>
+              </button>
+            </div>
+          </Row>
+          <Row title="Ask which app every time" desc="Off: the Share buttons use the first app straight away">
+            <Toggle checked={form.shareAsk} onChange={(v) => set({ shareAsk: v })} label="Ask which app every time" />
+          </Row>
+          <Row
+            title="Player"
+            desc={
+              shareInfo?.vlcFound
+                ? 'What the Play buttons and “Open when done” open the file with.'
+                : 'VLC was not found on this PC, so files open in the Windows default player.'
+            }
+          >
+            {shareInfo?.vlcFound ? (
+              <Segmented
+                size="sm"
+                options={[
+                  { value: 'vlc', label: 'VLC', hint: 'Plays anything, including MKV with several audio tracks.' },
+                  { value: 'system', label: 'Windows player', hint: 'Whatever Windows associates with the file type.' }
+                ]}
+                value={form.player}
+                onChange={(v) => set({ player: v as Player })}
+              />
+            ) : (
+              <span className="status-pill neutral">Windows player</span>
+            )}
+          </Row>
+        </Section>
+        </>
       )}
 
       {activeTab.id === 'speed' && (
         <Section>
           <Row
-            title="Maximum speed"
-            desc="Focus on one video with up to 8 parallel fragments when the site supports them"
+            title="Download engine"
+            desc={
+              toolStatus?.aria2cFound
+                ? 'Built-in is the right choice for YouTube and most sites. aria2 opens many connections to one file, which only helps on sites that slow each connection down (Vimeo, X, direct links).'
+                : 'Built-in is the right choice for YouTube and most sites. aria2 was not found on this PC.'
+            }
           >
-            <button
-              className={maximumSpeedActive ? 'btn-accent' : 'btn-outline'}
-              onClick={() =>
-                set({
-                  parallelDownloads: 1,
-                  concurrentFragments: 8,
-                  speedLimit: { ...form.speedLimit, enabled: false }
-                })
-              }
-            >
-              <Icon name={maximumSpeedActive ? 'check' : 'sparkle'} size={15} />
-              {maximumSpeedActive ? 'Active' : 'Use preset'}
-            </button>
+            <Segmented
+              size="sm"
+              options={[
+                {
+                  value: 'native',
+                  label: 'Built-in',
+                  recommended: true,
+                  hint: "yt-dlp's own downloader. Fast on YouTube, works everywhere."
+                },
+                { value: 'aria2', label: 'aria2', hint: 'Many connections per file. For sites that cap each connection.' }
+              ]}
+              value={toolStatus?.aria2cFound ? form.downloadEngine : 'native'}
+              onChange={(v) => set({ downloadEngine: v as DownloadEngine })}
+            />
           </Row>
-          <Row title="Parallel downloads" desc="How many downloads run at once">
+          <Row title="Parallel downloads" desc="How many videos download at the same time">
             <Segmented
               size="sm"
               options={[
@@ -370,19 +536,24 @@ export function SettingsScreen(): JSX.Element {
           </Row>
           <Row
             title="Connection boost"
-            desc="Parallel fragments for DASH/HLS downloads — other streams may not get faster"
+            desc="How many pieces of one video are fetched at the same time. YouTube slows down every single connection, so Turbo or Max is what makes a fast line fast. Sites that hand out one plain file do not get faster."
           >
-            <Segmented
-              size="sm"
-              options={[
-                { value: '1', label: 'Normal' },
-                { value: '4', label: 'Fast' },
-                { value: '8', label: 'Turbo' },
-                { value: '16', label: 'Max' }
-              ]}
-              value={String(form.concurrentFragments)}
-              onChange={(v) => set({ concurrentFragments: Number(v) })}
-            />
+            <div className="boost-control">
+              <span className="lanes">
+                {form.concurrentFragments} {form.concurrentFragments === 1 ? 'connection' : 'connections'}
+              </span>
+              <Segmented
+                size="sm"
+                options={[
+                  { value: '1', label: 'Normal', hint: '1 connection' },
+                  { value: '4', label: 'Fast', hint: '4 connections' },
+                  { value: '8', label: 'Turbo', hint: '8 connections' },
+                  { value: '16', label: 'Max', hint: '16 connections (recommended for YouTube)' }
+                ]}
+                value={String(form.concurrentFragments)}
+                onChange={(v) => set({ concurrentFragments: Number(v) })}
+              />
+            </div>
           </Row>
           <Row title="Speed limit" desc="Cap total bandwidth so downloads don't hog your connection">
             <div className="speed-control">
@@ -424,8 +595,8 @@ export function SettingsScreen(): JSX.Element {
       {activeTab.id === 'files' && (
         <>
           <Section title="File names">
-            <Row title="Naming pattern" stacked>
-              <div className="template-picker">
+            <Row title="Naming pattern" desc="How finished files are named; the preview uses a sample video." stacked>
+              <div className={`template-picker ${isCustomTemplate ? 'custom' : ''}`}>
                 <Segmented
                   size="sm"
                   options={[
@@ -453,7 +624,7 @@ export function SettingsScreen(): JSX.Element {
                     aria-label="Custom file name pattern"
                   />
                 )}
-                <div className="template-preview">
+                <div className="template-preview" title={previewName(form.filenameTemplate)}>
                   <span className="pv-label">Preview</span>
                   <code>{previewName(form.filenameTemplate)}</code>
                 </div>
@@ -462,33 +633,38 @@ export function SettingsScreen(): JSX.Element {
           </Section>
 
           <Section title="Formats">
-            <Row title="Preferred video container">
+            <Row
+              title="Preferred video container"
+              desc="MP4 plays everywhere (phones, TVs, editors). MKV holds any codec and several audio tracks, so dubs need it. WebM is the open format for VP9 and AV1."
+            >
               <Segmented
                 size="sm"
                 options={[
-                  { value: 'mp4', label: 'MP4' },
-                  { value: 'mkv', label: 'MKV' },
-                  { value: 'webm', label: 'WebM' }
+                  { value: 'mp4', label: 'MP4', recommended: true, hint: 'Plays everywhere. Best default.' },
+                  { value: 'mkv', label: 'MKV', hint: 'Any codec, several audio tracks and subtitles in one file.' },
+                  { value: 'webm', label: 'WebM', hint: 'Open format for VP9/AV1. Browsers and most players.' }
                 ]}
                 value={form.preferredVideoContainer}
                 onChange={(v) => set({ preferredVideoContainer: v as VideoContainer })}
               />
             </Row>
-            <Row title="Preferred audio format">
-              <div className="select-wrap">
-                <select
-                  value={form.preferredAudioFormat}
-                  onChange={(e) => set({ preferredAudioFormat: e.target.value as AudioOutputFormat })}
-                >
-                  <option value="mp3">MP3</option>
-                  <option value="m4a">M4A (AAC)</option>
-                  <option value="opus">Opus</option>
-                  <option value="wav">WAV</option>
-                  <option value="flac">FLAC</option>
-                  <option value="best">Original</option>
-                </select>
-                <Icon name="chevron" size={16} />
-              </div>
+            <Row
+              title="Preferred audio format"
+              desc="MP3 plays everywhere. M4A sounds the same at smaller size. Opus is the smallest. WAV and FLAC are lossless and large. Original keeps the source track without re-encoding."
+            >
+              <Segmented
+                size="sm"
+                options={[
+                  { value: 'mp3', label: 'MP3', recommended: true, hint: 'Plays everywhere.' },
+                  { value: 'm4a', label: 'M4A', hint: 'AAC. Same quality as MP3 at a smaller size; Apple-friendly.' },
+                  { value: 'opus', label: 'Opus', hint: 'Smallest files; modern players only.' },
+                  { value: 'wav', label: 'WAV', hint: 'Lossless, uncompressed, very large.' },
+                  { value: 'flac', label: 'FLAC', hint: 'Lossless, compressed, large.' },
+                  { value: 'best', label: 'Original', hint: 'Keeps the source track as is, no re-encoding.' }
+                ]}
+                value={form.preferredAudioFormat}
+                onChange={(v) => set({ preferredAudioFormat: v as AudioOutputFormat })}
+              />
             </Row>
             <Row title="Embed cover art in audio" desc="Add the thumbnail as album art (MP3/M4A)">
               <Toggle
@@ -550,28 +726,15 @@ export function SettingsScreen(): JSX.Element {
                 label="Download all my languages"
               />
             </Row>
-            <Row
+            <LanguageRow
               title="Preferred languages"
-              desc="Downloaded and merged as switchable tracks whenever a video offers them, in this order."
-              stacked
-            >
-              <div className="sub-lang-chips">
-                {AUDIO_LANGUAGES.map((l) => (
-                  <button
-                    key={l.code}
-                    className={`chip chip-sm ${audioBaseSet.has(l.code) ? 'active' : ''}`}
-                    onClick={() => toggleAudioLang(l.code)}
-                  >
-                    {l.label}
-                  </button>
-                ))}
-                {extraAudioLangs.map((l) => (
-                  <button key={l} className="chip chip-sm active" onClick={() => toggleAudioLang(l)}>
-                    {l.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-            </Row>
+              desc="Downloaded and merged as switchable tracks whenever a video offers them, in the order you pick them."
+              selected={audioLangs}
+              onToggle={toggleAudioLang}
+              open={audioDrawerOpen}
+              setOpen={setAudioDrawerOpen}
+              collapseOnPick={false}
+            />
           </Section>
 
           <Section title="Subtitles">
@@ -583,26 +746,21 @@ export function SettingsScreen(): JSX.Element {
               />
             </Row>
             {form.subtitles.enabled && (
-              <Row title="Default subtitle languages" desc="Comma-separated codes, e.g. en, es" stacked>
-                <input
-                  className="text-input mono"
-                  value={subLangText}
-                  spellCheck={false}
-                  onChange={(e) => setSubLangText(e.target.value)}
-                  onBlur={() =>
-                    set({
-                      subtitles: {
-                        ...form.subtitles,
-                        languages: subLangText
-                          .split(',')
-                          .map((s) => s.trim())
-                          .filter(Boolean)
-                      }
-                    })
-                  }
-                  placeholder="en, es"
-                />
-              </Row>
+              <LanguageRow
+                title="Default subtitle language"
+                desc="Preselected whenever a video offers it"
+                selected={form.subtitles.languages}
+                onToggle={(code) => {
+                  const on = form.subtitles.languages.some((c) => baseCode(c) === code)
+                  const next = on
+                    ? form.subtitles.languages.filter((c) => baseCode(c) !== code)
+                    : [...form.subtitles.languages, code]
+                  set({ subtitles: { ...form.subtitles, languages: next } })
+                }}
+                open={subDrawerOpen}
+                setOpen={setSubDrawerOpen}
+                collapseOnPick
+              />
             )}
           </Section>
         </>

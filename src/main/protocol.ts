@@ -12,6 +12,9 @@ const JOB_ID_RE = /^job_[a-z0-9_]+$/i
 export type DeepLink =
   | { kind: 'download'; url: string }
   | { kind: 'job'; id: string; action: 'open' | 'reveal' }
+  // snag://open — the extension's in-page panel starting Snag so it can talk
+  // to the local API; no window is requested.
+  | { kind: 'open' }
 
 export function isHttpUrl(value: string): boolean {
   try {
@@ -32,6 +35,7 @@ export function isSafeExternalUrl(value: string): boolean {
 // Parse any supported deep link:
 //   snag://download?url=https%3A%2F%2Fyoutube.com%2Fwatch%3Fv%3Dabc
 //   snag://job?id=job_abc&action=open
+//   snag://open
 // Returns null for anything malformed, oversized, or unknown.
 export function parseDeepLinkAction(raw: unknown): DeepLink | null {
   if (typeof raw !== 'string') return null
@@ -55,6 +59,8 @@ export function parseDeepLinkAction(raw: unknown): DeepLink | null {
     if (!isHttpUrl(target)) return null
     return { kind: 'download', url: new URL(target).toString() }
   }
+
+  if (action === 'open') return { kind: 'open' }
 
   if (action === 'job') {
     const id = link.searchParams.get('id')?.trim() ?? ''

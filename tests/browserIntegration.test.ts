@@ -72,16 +72,24 @@ describe('browser integration', () => {
     expect(content).toContain("setAttribute('role', 'dialog')")
     expect(content).toContain('prefers-reduced-motion')
     // Redesigned panel: one quality radio list, inline format chips, a sliding
-    // Video/Audio segment, and a download button that collapses into progress.
+    // Video/Audio segment, and a download button. Progress lives in a corner
+    // toast the thumbnail flies into; a missing app is started via snag://open.
     expect(content).toContain("'qrow'")
     expect(content).toContain("'fchip'")
     expect(content).toContain("'seg-ind'")
     expect(content).toContain("el('button', 'go')")
     expect(content).toContain("el('div', 'track')")
     expect(content).toContain("el('div', 'fill')")
-    expect(content).toContain('stage-progress')
+    expect(content).toContain('function trackDownload(')
+    expect(content).toContain('function flyToCorner(')
+    expect(content).toContain("location.href = 'snag://open'")
     expect(content).toContain('snag:cancel')
-    expect(content).toContain("el('button', 'cancel', 'Cancel')")
+    expect(content).not.toContain('stage-progress')
+    // Thumbnail hover buttons and placement that respects fixed headers and
+    // whole control clusters.
+    expect(content).toContain("'snag-thumb-btn'")
+    expect(content).toContain('function fixedTopInset(')
+    expect(content).toContain('function clearOffset(')
     expect(content).not.toContain("'Added to Snag'")
     expect(content).not.toContain("el('div', 'save')")
     // Old card-grid and the in-panel audio-language picker are gone.

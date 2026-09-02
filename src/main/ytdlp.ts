@@ -18,10 +18,13 @@ export function ytdlpRuntimeArgs(runtimePath: string = process.execPath): string
   return ['--no-js-runtimes', '--js-runtimes', `node:${runtimePath}`]
 }
 
+// yt-dlp is a Python program; with a pipe for stdout it would print in the
+// Windows code page, mangling en dashes and full-width characters in the
+// "[download] Destination:" lines Snag reads file names from. Force UTF-8.
 export function ytdlpChildEnv(
   baseEnv: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
-  return { ...baseEnv, ELECTRON_RUN_AS_NODE: '1' }
+  return { ...baseEnv, ELECTRON_RUN_AS_NODE: '1', PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
 }
 
 interface ExecFailure extends Error {
@@ -143,6 +146,7 @@ function which(base: string): string | null {
 
 let cachedYtdlp: string | null | undefined
 let cachedFfmpeg: string | null | undefined
+let cachedAria2c: string | null | undefined
 
 function bundledTool(base: string): string | null {
   const name = isWin ? `${base}.exe` : base
@@ -222,9 +226,16 @@ export function ffmpegDir(): string | null {
   return p ? dirname(p) : null
 }
 
+// Bundled aria2c, else one on PATH (winget installs land in WinGet\Links).
+export function locateAria2c(): string | null {
+  if (cachedAria2c === undefined) cachedAria2c = bundledTool('aria2c') || which('aria2c')
+  return cachedAria2c
+}
+
 export function resetToolCache(): void {
   cachedYtdlp = undefined
   cachedFfmpeg = undefined
+  cachedAria2c = undefined
 }
 
 export async function getYtdlpVersion(override?: string | null): Promise<string | null> {
@@ -241,13 +252,16 @@ export async function getYtdlpVersion(override?: string | null): Promise<string 
 export async function getToolStatus(override?: string | null): Promise<ToolStatus> {
   const ytdlpPath = locateYtdlp(override)
   const ffmpegPath = locateFfmpeg()
+  const aria2cPath = locateAria2c()
   const ytdlpVersion = await getYtdlpVersion(override)
   return {
     ytdlpFound: !!ytdlpPath,
     ytdlpPath,
     ytdlpVersion,
     ffmpegFound: !!ffmpegPath,
-    ffmpegPath
+    ffmpegPath,
+    aria2cFound: !!aria2cPath,
+    aria2cPath
   }
 }
 

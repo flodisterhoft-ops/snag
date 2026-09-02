@@ -10,12 +10,14 @@ import {
   writeFileSync
 } from 'fs'
 import { basename, dirname, extname, join } from 'path'
-import { app, shell } from 'electron'
+import { app } from 'electron'
 import { loadSettings } from './settings'
-import { locateYtdlp, ffmpegDir, cleanYtdlpError, ytdlpChildEnv } from './ytdlp'
+import { locateYtdlp, ffmpegDir, locateAria2c, cleanYtdlpError, ytdlpChildEnv } from './ytdlp'
 import { buildDownloadArgs, PROGRESS_PREFIX } from './args'
 import { cookieArgs } from './cookies'
 import { notifyComplete, notifyError } from './notify'
+import { shareFile } from './share'
+import { openWithPlayer } from './player'
 import type { DownloadJob, DownloadRequest, ProgressUpdate } from '@shared/types'
 
 let counter = 0
@@ -77,6 +79,75 @@ function killTree(proc: ChildProcess): void {
   }
 }
 
+// What a yt-dlp post-processor line means to a person watching the queue.
+const PHASES: [RegExp, string][] = [
+  [/^\[Merger\]/, 'Merging video and audio'],
+  [/^\[ExtractAudio\]/, 'Converting audio'],
+  [/^\[VideoConvertor\]/, 'Converting video'],
+  [/^\[VideoRemuxer\]/, 'Repacking the file'],
+  [/^\[Fixup[A-Za-z0-9]*\]/, 'Fixing up the file'],
+  [/^\[(EmbedSubtitle|SubtitlesConvertor)\]/, 'Embedding subtitles'],
+  [/^\[(EmbedThumbnail|ThumbnailsConvertor)\]/, 'Embedding the thumbnail'],
+  [/^\[Metadata\]/, 'Writing metadata'],
+  [/^\[(ModifyChapters|SponsorBlock)\]/, 'Cutting marked segments']
+]
+
+// aria2c's console readout, one per second while it downloads a plain file:
+//   [#a0872f 74MiB/354MiB(20%) CN:16 DL:97MiB ETA:2s]
+// yt-dlp does not relay external-downloader progress, so this is the only
+// progress signal the aria2 engine gives us.
+const ARIA2_READOUT_RE =
+  /\[#[0-9a-z]+ ([\d.]+)([KMGT]?i?B)\/([\d.]+)([KMGT]?i?B)\((\d+)%\)(?: CN:\d+)?(?: DL:([\d.]+[KMGT]?i?B))?(?: ETA:([\dhms]+))?\]/
+
+export function parseAria2Readout(
+  line: string
+): { progress: number; speed: string | null; eta: string | null; sizeLabel: string | null } | null {
+  let m: RegExpExecArray | null = null
+  let last: RegExpExecArray | null = null
+  const re = new RegExp(ARIA2_READOUT_RE.source, 'g')
+  while ((m = re.exec(line))) last = m
+  if (!last) return null
+  return {
+    progress: Math.max(0, Math.min(100, Number(last[5]))),
+    speed: last[6] ? `${last[6]}/s` : null,
+    eta: last[7] ?? null,
+    sizeLabel: `${last[3]}${last[4]}`
+  }
+}
+
+// Letters and digits only, with compatibility characters folded ("？" → "?"
+// → dropped), so a name that lost an en dash or a full-width character to
+// the console encoding still matches the file on disk.
+export function fileNameSkeleton(name: string): string {
+  return name.normalize('NFKC').replace(/[^0-9a-z]/gi, '').toLowerCase()
+}
+
+// A completed job whose file is gone: look for the one file in the same
+// folder with the same extension and letters. Null unless exactly one matches.
+export function findRenamedFile(
+  path: string,
+  list: (dir: string) => string[] = (dir) => readdirSync(dir)
+): string | null {
+  const dir = dirname(path)
+  const base = basename(path)
+  const ext = extname(base).toLowerCase()
+  const want = fileNameSkeleton(base)
+  if (!want) return null
+  let names: string[]
+  try {
+    names = list(dir)
+  } catch {
+    return null
+  }
+  const matches = names.filter((n) => extname(n).toLowerCase() === ext && fileNameSkeleton(n) === want)
+  return matches.length === 1 ? join(dir, matches[0]) : null
+}
+
+export function postProcessingPhase(line: string): string | null {
+  for (const [re, label] of PHASES) if (re.test(line)) return label
+  return null
+}
+
 export class DownloadManager extends EventEmitter {
   private jobs = new Map<string, DownloadJob>()
   private order: string[] = []
@@ -102,8 +173,19 @@ export class DownloadManager extends EventEmitter {
     this.initialized = true
     this.persistenceFile = file
     this.restoreJobs()
+    this.healFilePaths()
     this.flushPersistence()
     if (startQueued) this.pump()
+  }
+
+  // Jobs finished before yt-dlp printed UTF-8 can point at names with lost
+  // characters; point them at the real file once.
+  private healFilePaths(): void {
+    for (const job of this.jobs.values()) {
+      if (job.status !== 'completed' || !job.filepath || existsSync(job.filepath)) continue
+      const healed = findRenamedFile(job.filepath)
+      if (healed) job.filepath = healed
+    }
   }
 
   enqueue(request: DownloadRequest): DownloadJob {
@@ -343,6 +425,7 @@ export class DownloadManager extends EventEmitter {
       eta: job.eta,
       sizeLabel: job.sizeLabel,
       itemLabel: job.itemLabel,
+      phase: job.phase ?? null,
       filepath: job.filepath,
       errorMessage: job.errorMessage,
       title: job.request.title
@@ -363,6 +446,7 @@ export class DownloadManager extends EventEmitter {
 
     const args = buildDownloadArgs(job.request, settings, {
       ffmpegLocation: ffmpegDir(),
+      aria2cPath: settings.downloadEngine === 'aria2' ? locateAria2c() : null,
       nodeRuntimePath: process.execPath,
       cookieArgs: cookieArgs(settings)
     })
@@ -401,7 +485,8 @@ export class DownloadManager extends EventEmitter {
     child.stdout?.setEncoding('utf-8')
     child.stdout?.on('data', (chunk: string) => {
       stdoutRest += chunk
-      const lines = stdoutRest.split(/\r?\n/)
+      // aria2c redraws its readout with bare carriage returns.
+      const lines = stdoutRest.split(/\r\n|\n|\r/)
       stdoutRest = lines.pop() ?? ''
       for (const line of lines) consume(line)
     })
@@ -463,9 +548,13 @@ export class DownloadManager extends EventEmitter {
         })
         notifyComplete(this.jobs.get(job.id)!, loadSettings().notificationsEnabled)
         if (job.request.openWhenDone && path && existsSync(path)) {
-          void shell.openPath(path).catch(() => {
+          void openWithPlayer(path).catch(() => {
             /* the file is still there; the user can open it from the queue */
           })
+        }
+        if (job.request.shareWhenDone && path && existsSync(path)) {
+          // Errors surface nowhere useful here; the queue's Share button retries.
+          void shareFile(path, job.request.shareTarget).catch(() => {})
         }
       } else {
         const msg = cleanYtdlpError(stderrBuf || 'Download failed.')
@@ -485,34 +574,34 @@ export class DownloadManager extends EventEmitter {
       this.parseProgress(id, line.slice(PROGRESS_PREFIX.length))
       return {}
     }
+    const aria2 = parseAria2Readout(line)
+    if (aria2) {
+      this.update(id, { status: 'downloading', phase: null, ...aria2 })
+      return {}
+    }
 
     let m: RegExpMatchArray | null
     if ((m = line.match(/^\[download\]\s+Destination:\s+(.+)$/))) {
       return { destination: m[1].trim() }
     }
     if ((m = line.match(/^\[Merger\]\s+Merging formats into\s+"(.+)"\s*$/))) {
-      this.update(id, { status: 'processing', progress: 100 })
+      this.update(id, { status: 'processing', progress: 100, phase: 'Merging video and audio' })
       return { finalPath: m[1].trim() }
     }
     if ((m = line.match(/^\[ExtractAudio\]\s+Destination:\s+(.+)$/))) {
-      this.update(id, { status: 'processing', progress: 100 })
+      this.update(id, { status: 'processing', progress: 100, phase: 'Converting audio' })
       return { finalPath: m[1].trim() }
     }
     const remuxDestination = parseRemuxDestination(line)
     if (remuxDestination) {
-      this.update(id, { status: 'processing', progress: 100 })
+      this.update(id, { status: 'processing', progress: 100, phase: 'Repacking the file' })
       return { finalPath: remuxDestination }
     }
     if ((m = line.match(/^\[download\]\s+(.+?)\s+has already been downloaded/))) {
       return { finalPath: m[1].trim() }
     }
-    if (
-      /^\[(Fixup[A-Za-z0-9]*|VideoConvertor|Metadata|EmbedSubtitle|SubtitlesConvertor|ThumbnailsConvertor|EmbedThumbnail|VideoRemuxer)\]/.test(
-        line
-      )
-    ) {
-      this.update(id, { status: 'processing', progress: 100 })
-    }
+    const phase = postProcessingPhase(line)
+    if (phase) this.update(id, { status: 'processing', progress: 100, phase })
     return {}
   }
 
@@ -521,6 +610,7 @@ export class DownloadManager extends EventEmitter {
     const progress = parsePercent(parts[0])
     const patch: Partial<DownloadJob> = {
       status: 'downloading',
+      phase: null,
       speed: cleanField(parts[1]),
       eta: cleanField(parts[2]),
       sizeLabel: cleanField(parts[3]),
@@ -536,6 +626,9 @@ export class DownloadManager extends EventEmitter {
       candidates.add(d)
       candidates.add(`${d}.part`)
       candidates.add(`${d}.ytdl`)
+      // aria2c keeps its resume state next to the partial file.
+      candidates.add(`${d}.aria2`)
+      candidates.add(`${d}.part.aria2`)
 
       // Fragmented downloads can leave files such as video.webm.part-Frag12.part.
       // Only scan the destination's own directory and only accept the exact basename prefix.
@@ -615,6 +708,7 @@ export class DownloadManager extends EventEmitter {
       job.eta = typeof job.eta === 'string' ? job.eta : null
       job.sizeLabel = typeof job.sizeLabel === 'string' ? job.sizeLabel : null
       job.itemLabel = typeof job.itemLabel === 'string' ? job.itemLabel : null
+      job.phase = typeof job.phase === 'string' ? job.phase : null
       job.filepath = typeof job.filepath === 'string' ? job.filepath : null
       job.errorMessage = typeof job.errorMessage === 'string' ? job.errorMessage : null
       job.createdAt = Number.isFinite(job.createdAt) ? job.createdAt : Date.now()

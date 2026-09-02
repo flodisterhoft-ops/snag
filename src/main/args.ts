@@ -20,8 +20,17 @@ export const YOUTUBE_CLIENT_ARGS = [
   'youtube:player_client=web_embedded,default'
 ] as const
 
+// Analysis first tries the default clients alone: about a third faster than
+// the set above and, with current yt-dlp, the same formats and dubbed tracks
+// (measured 2026-09: the embedded client only added the legacy 360p stream
+// and DRC audio variants). The wider set stays the fallback and is always
+// used for the download itself, so every analyzed format ID exists there.
+export const YOUTUBE_FAST_CLIENT_ARGS = ['--extractor-args', 'youtube:player_client=default'] as const
+
 export interface BuildContext {
   ffmpegLocation: string | null
+  // aria2c executable; only used when the aria2 engine is selected.
+  aria2cPath?: string | null
   nodeRuntimePath?: string | null
   // --cookies / --cookies-from-browser for signed-in downloads.
   cookieArgs?: string[]
@@ -72,6 +81,16 @@ export function buildDownloadArgs(
   const frags = Math.max(1, Math.min(16, Math.round(settings.concurrentFragments || 1)))
   if (frags > 1) {
     args.push('--concurrent-fragments', String(frags))
+  }
+
+  // aria2 engine: plain http(s) files go through aria2c with the same
+  // connection count. DASH fragments stay with yt-dlp's own downloader (it
+  // already runs them in parallel and reports progress), as do HLS streams.
+  // yt-dlp forwards --limit-rate, headers, and cookies to aria2c itself; the
+  // progress bar is fed from aria2c's console readout (see downloader.ts).
+  if (settings.downloadEngine === 'aria2' && ctx.aria2cPath) {
+    args.push('--downloader', `http:${ctx.aria2cPath}`)
+    args.push('--downloader-args', `aria2c:-x${frags} -s${frags} -k1M --enable-color=false`)
   }
 
   // Output template. Whole-playlist downloads go into a per-playlist subfolder.

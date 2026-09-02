@@ -4,7 +4,7 @@ import { useStore } from '../store'
 import { Icon, Spinner } from '../components/ui'
 import { MediaCard } from '../components/MediaCard'
 import { FormatPicker, FormatSelection } from '../components/FormatPicker'
-import { shortPath } from '../lib/format'
+import { DownloadBar } from '../components/DownloadBar'
 
 // Compact browser-handoff dialog: analyze the handed-off link, confirm format
 // and folder, download, close. Playlists and subtitles stay in the full app.
@@ -116,7 +116,7 @@ export function QuickApp(): JSX.Element {
     window.close()
   }
 
-  const startDownload = async (): Promise<void> => {
+  const startDownload = async (share: string | undefined | null = null): Promise<void> => {
     if (!info || !selection || !selection.valid || !saveDir || submittingRef.current) return
     submittingRef.current = true
     setSubmitting(true)
@@ -131,6 +131,8 @@ export function QuickApp(): JSX.Element {
       mergeContainer: selection.mergeContainer,
       audioLanguage: selection.audioLanguage,
       audioOutputFormat: selection.audioOutputFormat,
+      shareWhenDone: share !== null ? true : undefined,
+      shareTarget: share !== null ? share : undefined,
       saveDir,
       selectionLabel: selection.selectionLabel
     }
@@ -229,8 +231,14 @@ export function QuickApp(): JSX.Element {
           </div>
         ) : info ? (
           <>
-            <MediaCard info={info} />
-            {settings && <FormatPicker info={info} settings={settings} onChange={setSelection} />}
+            <div className="result-card">
+              <MediaCard info={info} />
+              <div className="result-section">
+                {settings && (
+                  <FormatPicker info={info} settings={settings} onChange={setSelection} />
+                )}
+              </div>
+            </div>
             {info.playlist && (
               <div className="quick-note">
                 <Icon name="queue" size={14} />
@@ -240,27 +248,20 @@ export function QuickApp(): JSX.Element {
                 </span>
               </div>
             )}
-            <div className="save-row">
-              <button className="folder-pick" onClick={changeFolder}>
-                <Icon name="folder" size={16} />
-                <div className="folder-info">
-                  <span className="folder-label">Save to</span>
-                  <span className="folder-path" title={saveDir}>
-                    {shortPath(saveDir, 34)}
-                  </span>
-                </div>
-                <span className="folder-change">Change</span>
-              </button>
-              <button className="btn-accent btn-download" onClick={startDownload} disabled={!canDownload}>
-                {submitting ? <Spinner size={17} /> : <Icon name="download" size={17} />}
-                <span className="btn-download-label">
-                  {submitting ? 'Adding…' : 'Download'}
-                  {selection?.selectionLabel && (
-                    <span className="btn-download-sub">{selection.selectionLabel}</span>
-                  )}
-                </span>
-              </button>
-            </div>
+            <DownloadBar
+              saveDir={saveDir}
+              onChangeFolder={() => void changeFolder()}
+              onDownload={() => void startDownload()}
+              onShare={(targetId) => void startDownload(targetId)}
+              disabled={!canDownload}
+              busy={submitting}
+              label={submitting ? 'Adding…' : 'Download'}
+              sub={
+                selection
+                  ? [selection.selectionLabel, selection.sizeLabel].filter(Boolean).join(' · ')
+                  : null
+              }
+            />
           </>
         ) : (
           <div className="quick-center">

@@ -1,16 +1,25 @@
 // Snag for Chrome — content script.
 // Pins one floating download button to the top-right corner of every
-// large-enough <video>. Clicking it slides a quality-picker panel down from
-// the button, right on top of the page — analyze, pick, download, all without
-// leaving the video. Falls back to snag:// links when the app isn't running.
+// large-enough <video> (and, on YouTube, to thumbnails under the pointer).
+// Clicking it opens a quality-picker panel right on top of the page; the
+// download itself then flies into a small progress toast in the corner.
+// Starts Snag through snag://open when the app isn't running.
 
 ;(() => {
   const MIN_WIDTH = 250
   const MIN_HEIGHT = 140
   const BTN_SIZE = 36
   const INSET = 10
-  const PANEL_WIDTH = 300
+  const PANEL_BASE_WIDTH = 300
   const HOST = location.hostname
+  const IS_YT = /(^|\.)youtube\.com$/i.test(HOST)
+
+  // The corner toast is sized for a 1920px-wide viewport; wide 4K desktops
+  // get it proportionally larger so it stays readable. The picker panel keeps
+  // its size: it sits next to the video, where big is in the way.
+  function uiScale() {
+    return Math.min(1.6, Math.max(1, Math.max(innerWidth, screen.width || 0) / 1920))
+  }
 
   let disabled = false
   const buttons = new Map() // <video> element -> its button element
@@ -238,7 +247,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
     .num { font-variant-numeric: tabular-nums; }
     .panel {
-      width: ${PANEL_WIDTH}px; max-height: 78vh; overflow-y: auto; overscroll-behavior: contain;
+      width: ${PANEL_BASE_WIDTH}px; max-height: 78vh; overflow-y: auto; overscroll-behavior: contain;
       background: linear-gradient(180deg, #191c23, #14161c); color: #eef0f3;
       border: 1px solid rgba(255,255,255,0.14); border-radius: 16px;
       box-shadow: 0 24px 60px -18px rgba(0,0,0,0.85);
@@ -307,30 +316,30 @@
     .lang-pref p { margin: 0 0 8px; color: #a7adb7; font-size: 11.5px; line-height: 1.4; }
     .lang-pref .btn2 { width: 100%; padding: 8px 10px; }
 
-    /* footer: download / progress / done */
+    /* footer: download + share */
     .foot { padding: 10px 12px 12px; border-top: 1px solid rgba(255,255,255,0.07); margin-top: 7px; display: flex; flex-direction: column; }
-    .stage-progress .foot, .stage-done .foot { border-top: 0; margin-top: 0; }
-    .go { width: 100%; padding: 11px 16px; border: 0; border-radius: 12px; cursor: pointer; background: linear-gradient(160deg,#c6f24d,#aee235); color: #17200a; display: flex; align-items: center; justify-content: space-between; gap: 10px; box-shadow: 0 10px 26px -12px rgba(198,242,77,0.55); transition: filter .15s, transform .1s; }
+    .foot-row { display: flex; gap: 8px; }
+    .share { width: 46px; flex-shrink: 0; border: 0; border-radius: 12px; background: #252a34; color: #c6f24d; cursor: pointer; display: grid; place-items: center; transition: background .15s, transform .1s; }
+    .share:hover { background: #2f3542; }
+    .share:active { transform: translateY(1px); }
+    .share:disabled { opacity: 0.5; cursor: not-allowed; }
+    .share svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+    /* share-app chooser: a small card that slides out beside the panel */
+    .share-fly { position: absolute; left: calc(100% + 8px); top: 0; min-width: 190px; width: max-content; display: flex; flex-direction: column; gap: 2px; padding: 6px; background: #1d2129; color: #eef0f3; border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; box-shadow: 0 18px 44px -14px rgba(0,0,0,0.85); transform-origin: left center; animation: snagFlyIn .22s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+    .share-fly.left { left: auto; right: calc(100% + 8px); transform-origin: right center; animation-name: snagFlyInLeft; }
+    .share-fly .lbl2 { color: #6f757f; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 10px 5px; }
+    .share-fly .item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: #eef0f3; font-size: 13px; font-weight: 600; text-align: left; white-space: nowrap; cursor: pointer; animation: snagChipIn .22s ease both; }
+    .share-fly .item:hover { background: rgba(255,255,255,0.08); }
+    .share-fly .item img, .share-fly .item svg { width: 20px; height: 20px; border-radius: 5px; flex-shrink: 0; }
+    @keyframes snagChipIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+    @keyframes snagFlyIn { from { opacity: 0; transform: translateX(-10px) scale(0.96); } to { opacity: 1; transform: none; } }
+    @keyframes snagFlyInLeft { from { opacity: 0; transform: translateX(10px) scale(0.96); } to { opacity: 1; transform: none; } }
+    .go { flex: 1; min-width: 0; padding: 11px 16px; border: 0; border-radius: 12px; cursor: pointer; background: linear-gradient(160deg,#c6f24d,#aee235); color: #17200a; display: flex; align-items: center; justify-content: space-between; gap: 10px; box-shadow: 0 10px 26px -12px rgba(198,242,77,0.55); transition: filter .15s, transform .1s; }
     .go:hover { filter: brightness(1.05); }
     .go:active { transform: translateY(1px); }
     .go:disabled { opacity: 0.5; cursor: not-allowed; filter: none; box-shadow: none; }
     .go .gl { font-weight: 800; font-size: 14px; }
     .go .gs { font-size: 11px; font-weight: 700; opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .prog { display: none; flex-direction: column; gap: 9px; }
-    .prog .pt { display: flex; justify-content: space-between; align-items: baseline; }
-    .prog .pt strong { font-size: 13.5px; }
-    .prog .pt span { color: #c6f24d; font-weight: 800; font-size: 13.5px; }
-    .track { height: 8px; border-radius: 999px; background: #0f1116; border: 1px solid rgba(255,255,255,0.08); overflow: hidden; }
-    .fill { height: 100%; width: 0%; border-radius: inherit; background: linear-gradient(90deg,#aee235,#d5ff63); transition: width .3s ease; }
-    .pm { display: flex; justify-content: space-between; color: #a7adb7; font-size: 11px; }
-    .cancel { margin-top: 2px; width: 100%; padding: 7px; border: 1px solid rgba(255,255,255,0.13); border-radius: 9px; background: none; color: #a7adb7; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: border-color .13s, color .13s; }
-    .cancel:hover { border-color: rgba(255,157,148,0.5); color: #ff9d94; }
-    .done { display: none; align-items: center; gap: 10px; justify-content: center; padding: 6px 0; color: #eef0f3; font-weight: 700; font-size: 13.5px; }
-    .done .ok { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: rgba(198,242,77,0.15); border: 1.5px solid #c6f24d; color: #c6f24d; font-size: 13px; }
-    .stage-progress .go { display: none; }
-    .stage-progress .prog { display: flex; }
-    .stage-done .go { display: none; }
-    .stage-done .done { display: flex; }
 
     /* message states (loading / not running / error) */
     .center { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 26px 14px; color: #a7adb7; text-align: center; }
@@ -342,7 +351,7 @@
     .err { color: #ff9d94; font-size: 12.5px; text-align: center; }
 
     @media (prefers-reduced-motion: reduce) {
-      .panel, .panel.closing, .spin, .seg-ind, .fchip-ind, .fill, .qrow .radio::after { animation-duration: 0.001ms !important; transition: none !important; }
+      .panel, .panel.closing, .spin, .seg-ind, .fchip-ind, .qrow .radio::after, .share-fly, .share-fly .item { animation-duration: 0.001ms !important; transition: none !important; }
     }
   `
 
@@ -368,30 +377,44 @@
     return node
   }
 
-  // The panel is placed once, next to the button that opened it, and then
-  // stays pinned to that spot in the viewport. Following the button while the
-  // page scrolls or YouTube's layout settles made it wander and disappear.
+  // The panel is a page element anchored where its button was when clicked
+  // (document coordinates): it scrolls with the page like the video does,
+  // and once it has scrolled out of view it closes, leaving just the button.
+  // Corner buttons open it leftwards under their right edge; the thumbnail
+  // button sits top-left, so its panel grows to the right. Returns which
+  // corner it grows from, for the open animation.
   function positionPanel(host, btn) {
     const r = btn.getBoundingClientRect()
-    const left = Math.max(8, Math.min(r.right - PANEL_WIDTH, innerWidth - PANEL_WIDTH - 8))
-    const top = Math.max(8, Math.min(r.top, innerHeight - 120))
-    host.style.left = left + 'px'
-    host.style.top = top + 'px'
+    const fromLeft = btn.classList.contains('snag-thumb-btn') && r.left + PANEL_BASE_WIDTH + 8 <= innerWidth
+    const preferred = fromLeft ? r.left : r.right - PANEL_BASE_WIDTH
+    const left = Math.max(8, Math.min(preferred, innerWidth - PANEL_BASE_WIDTH - 8))
+    const top = Math.max(8, r.top)
+    host.style.left = left + scrollX + 'px'
+    host.style.top = top + scrollY + 'px'
+    return fromLeft ? 'top left' : 'top right'
   }
 
+  // Window resized: keep the panel inside the page width.
   function clampPanel(host) {
     const left = parseFloat(host.style.left) || 8
-    const top = parseFloat(host.style.top) || 8
-    host.style.left = Math.max(8, Math.min(left, innerWidth - PANEL_WIDTH - 8)) + 'px'
-    host.style.top = Math.max(8, Math.min(top, innerHeight - 120)) + 'px'
+    const maxLeft = scrollX + innerWidth - PANEL_BASE_WIDTH - 8
+    host.style.left = Math.max(scrollX + 8, Math.min(left, maxLeft)) + 'px'
   }
 
-  function openPanel(btn, video) {
+  // Scrolled far enough that the panel is no longer on screen: fold it away.
+  function panelScrolledAway(host) {
+    const r = host.getBoundingClientRect()
+    return r.bottom < -24 || r.top > innerHeight + 24
+  }
+
+  // `target` ({ url, title, thumbnail }) is set for thumbnail buttons, where
+  // there is no <video> to derive the page URL and metadata from.
+  function openPanel(btn, video, target) {
     closePanel(true)
 
     const host = el('div', 'snag-panel-host')
     host.dataset.snagPanel = 'true'
-    host.style.cssText = `position:fixed;z-index:2147483647;width:${PANEL_WIDTH}px;`
+    host.style.cssText = `position:absolute;z-index:2147483647;width:${PANEL_BASE_WIDTH}px;`
     const shadow = host.attachShadow({ mode: 'open' })
     const sheet = new CSSStyleSheet()
     sheet.replaceSync(PANEL_CSS)
@@ -404,22 +427,21 @@
     root.tabIndex = -1
     shadow.appendChild(root)
     document.documentElement.appendChild(host)
-    positionPanel(host, btn)
+    root.style.transformOrigin = positionPanel(host, btn)
     btn.style.visibility = 'hidden'
 
-    const pageUrl = resolveTargetUrl(video)
+    const pageUrl = target ? target.url : resolveTargetUrl(video)
     const state = {
       info: null, defaults: null, kind: 'video',
       quality: 0, container: null,
       groups: [], selectedLangs: [],
       audioLang: null, audioFmt: 'mp3',
-      busy: false, jobId: null, pollTimer: null, cancelRequested: false, wakeTimer: null
+      busy: false, launched: false, wakeTimer: null
     }
 
     // ----- dismissal wiring -----
     const onDocClick = (e) => {
       if (!panel) return
-      if (state.jobId) return
       const path = e.composedPath ? e.composedPath() : []
       if (path.includes(host) || path.includes(btn)) return
       closePanel()
@@ -427,18 +449,26 @@
     const onKey = (e) => { if (e.key === 'Escape') closePanel() }
     const onNav = () => closePanel(true)
     const onResize = () => clampPanel(host)
+    let scrollCheck = 0
+    const onScroll = () => {
+      if (scrollCheck) return
+      scrollCheck = requestAnimationFrame(() => {
+        scrollCheck = 0
+        if (panel && panel.host === host && panelScrolledAway(host)) closePanel()
+      })
+    }
     const outsideClickTimer = setTimeout(() => document.addEventListener('click', onDocClick, true), 0)
     document.addEventListener('keydown', onKey, true)
     addEventListener('popstate', onNav)
     addEventListener('yt-navigate-start', onNav, true)
     addEventListener('resize', onResize)
+    addEventListener('scroll', onScroll, { passive: true, capture: true })
     document.addEventListener('fullscreenchange', onNav)
 
     panel = {
       host, root, pageUrl, anchor: btn, returnFocus: btn,
       cleanup: () => {
         if (btn.isConnected) btn.style.visibility = 'visible'
-        if (state.pollTimer) clearTimeout(state.pollTimer)
         if (state.wakeTimer) clearTimeout(state.wakeTimer)
         clearTimeout(outsideClickTimer)
         document.removeEventListener('click', onDocClick, true)
@@ -446,12 +476,34 @@
         removeEventListener('popstate', onNav)
         removeEventListener('yt-navigate-start', onNav, true)
         removeEventListener('resize', onResize)
+        removeEventListener('scroll', onScroll, true)
+        if (scrollCheck) cancelAnimationFrame(scrollCheck)
         document.removeEventListener('fullscreenchange', onNav)
       }
     }
-    const meta = pageMeta(video)
+    const meta = target ? { title: target.title || '', thumbnail: target.thumbnail || null } : pageMeta(video)
 
     const LOGO = '<svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>'
+    const SHARE_ICON = '<svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.6 6.8-4.2"/><path d="m8.6 13.4 6.8 4.2"/></svg>'
+    const APP_ICONS = {
+      telegram: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="#2AABEE"/><path d="M5.4 11.6l11.6-4.5c.5-.2 1 .1.8.9l-2 9.3c-.1.7-.6.8-1.1.5l-3-2.2-1.5 1.4c-.2.2-.3.3-.6.3l.2-3.1 5.6-5.1c.2-.2 0-.3-.3-.1l-7 4.4-3-.9c-.7-.2-.7-.7.3-.9z" fill="#fff"/></svg>',
+      windows: '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5" fill="#0a5bd6"/><path d="M6 7.3l5-.7v5H6zM12 6.5l6-.9V11.6h-6zM6 12.4h5v5l-5-.7zM12 12.4h6v6l-6-.9z" fill="#fff"/></svg>'
+    }
+    // Logo for a share target: the built-in symbol, or the app's own icon
+    // (a data: PNG from Snag) for programs the user added.
+    function appIconNode(target) {
+      if (target.kind === 'custom' && typeof target.icon === 'string' && target.icon.startsWith('data:image/')) {
+        const img = document.createElement('img')
+        img.alt = ''
+        img.src = target.icon
+        return img
+      }
+      const svg = APP_ICONS[target.kind]
+      if (!svg) return null
+      const span = document.createElement('span')
+      span.innerHTML = svg
+      return span.firstChild
+    }
     const noMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 
     function selectedGroups() {
@@ -510,8 +562,6 @@
     }
 
     function renderMessage(children) {
-      if (state.pollTimer) clearTimeout(state.pollTimer)
-      root.classList.remove('stage-progress', 'stage-done')
       root.textContent = ''
       const head = buildHead(meta.title, meta.thumbnail, meta.title ? hostLabel() : '')
       const body = el('div', 'center')
@@ -528,26 +578,39 @@
       const line = el('span', null, hint || 'Start it once and downloads open right here.')
       const open = el('button', 'btn2 accent2', 'Open Snag')
       open.type = 'button'
-      open.addEventListener('click', () => { location.href = deepLink(pageUrl); waitForSnag() })
+      open.addEventListener('click', () => launchSnag(true))
       renderMessage([strong, line, open])
     }
 
-    // The deep link already hands this URL to Snag's own picker. Keep this
-    // panel open only long enough to confirm startup, then get out of the way
-    // so the same video cannot be enqueued from two simultaneous pickers.
-    function waitForSnag() {
+    // Start the app through its snag://open link. The browser only allows a
+    // protocol launch on a fresh user gesture, so this fires straight from
+    // the click that opened the panel; while Snag boots the panel waits, then
+    // continues with the analysis on its own.
+    function launchSnag(force) {
+      if (state.launched && !force) {
+        renderNotRunning()
+        return
+      }
+      state.launched = true
       renderLoading('Starting Snag…')
-      const deadline = Date.now() + 30000
+      try {
+        location.href = 'snag://open'
+      } catch {
+        /* the wait below reports if nothing came up */
+      }
+      waitForSnag()
+    }
+
+    function waitForSnag() {
+      if (state.wakeTimer) clearTimeout(state.wakeTimer)
+      const deadline = Date.now() + 40000
       const check = async () => {
         if (!panel || panel.host !== host) return
         const res = await sendMessage({ type: 'snag:ping' })
         if (!panel || panel.host !== host) return
         if (res && res.running) {
-          renderMessage([
-            el('strong', null, 'Opened in Snag'),
-            el('span', null, 'Continue in the Snag window.')
-          ])
-          state.wakeTimer = setTimeout(() => closePanel(), 900)
+          state.wakeTimer = null
+          void loadAndRender()
           return
         }
         if (Date.now() >= deadline) {
@@ -555,9 +618,9 @@
           renderNotRunning("Snag didn't start — is it installed?")
           return
         }
-        state.wakeTimer = setTimeout(check, 1500)
+        state.wakeTimer = setTimeout(check, 1000)
       }
-      state.wakeTimer = setTimeout(check, 1500)
+      state.wakeTimer = setTimeout(check, 1200)
     }
 
     function renderError(message) {
@@ -573,7 +636,6 @@
 
     // ----- the picker itself (header stays, middle collapses on download) -----
     function renderReady() {
-      root.classList.remove('stage-progress', 'stage-done')
       root.textContent = ''
 
       // Header: thumbnail + title + duration/site.
@@ -597,31 +659,83 @@
       audioView.style.display = 'none'
       mid.append(seg, videoView, audioView)
 
-      // Footer: download button, swapped for progress / done in place.
+      // Footer: Download, and a small Share button (download, then hand the
+      // file to a share app). Progress lives in the corner toast.
       const foot = el('div', 'foot')
+      const footRow = el('div', 'foot-row')
       const go = el('button', 'go')
       go.type = 'button'
-      go.append(el('span', 'gl', 'Download'))
+      const goLabel = el('span', 'gl', 'Download')
+      go.append(goLabel)
       const goSub = el('span', 'gs num')
       go.append(goSub)
-      const prog = el('div', 'prog')
-      const pt = el('div', 'pt')
-      const progLabel = el('strong', null, 'Downloading')
-      const progPct = el('span', 'num', '0%')
-      pt.append(progLabel, progPct)
-      const track = el('div', 'track')
-      const fill = el('div', 'fill')
-      track.appendChild(fill)
-      const pm = el('div', 'pm')
-      const progSpeed = el('span', 'num')
-      const progEta = el('span', 'num')
-      pm.append(progSpeed, progEta)
-      const cancelBtn = el('button', 'cancel', 'Cancel')
-      cancelBtn.type = 'button'
-      prog.append(pt, track, pm, cancelBtn)
-      const done = el('div', 'done')
-      done.append(el('span', 'ok', '✓'), document.createTextNode(' Saved to your folder'))
-      foot.append(go, prog, done)
+      const shareBtn = el('button', 'share')
+      shareBtn.type = 'button'
+      shareBtn.innerHTML = SHARE_ICON
+      footRow.append(go, shareBtn)
+      foot.append(footRow)
+
+      // The chooser is a sibling of the panel inside the shadow root, so the
+      // panel's own scrolling cannot clip it. It slides out to the right of
+      // the panel level with the Share button, or to the left when the panel
+      // sits at the right edge of the window.
+      let shareFly = null
+      function closeShareFly() {
+        if (shareFly) shareFly.remove()
+        shareFly = null
+      }
+      function openShareFly(list) {
+        closeShareFly()
+        const fly = el('div', 'share-fly')
+        fly.setAttribute('role', 'menu')
+        fly.setAttribute('aria-label', 'Share with')
+        fly.appendChild(el('span', 'lbl2', 'Share with'))
+        list.forEach((t, i) => {
+          const item = el('button', 'item')
+          item.type = 'button'
+          item.setAttribute('role', 'menuitem')
+          const icon = appIconNode(t)
+          if (icon) item.appendChild(icon)
+          item.appendChild(document.createTextNode(t.label))
+          item.style.animationDelay = 40 + i * 35 + 'ms'
+          item.addEventListener('click', () => {
+            closeShareFly()
+            void enqueue({ shareWhenDone: true, shareTarget: t.id })
+          })
+          fly.appendChild(item)
+        })
+        // Offsets rather than client rects: the panel may still be in its
+        // open animation (scaled), and rects would follow the transform.
+        let top = -root.scrollTop
+        for (let n = shareBtn; n && n !== host; n = n.offsetParent) top += n.offsetTop
+        fly.style.top = Math.max(0, top - 6) + 'px'
+        const hostRect = host.getBoundingClientRect()
+        shadow.appendChild(fly)
+        const width = fly.getBoundingClientRect().width
+        if (hostRect.right + 8 + width > innerWidth - 8 && hostRect.left - 8 - width >= 8) fly.classList.add('left')
+        shareFly = fly
+      }
+      root.addEventListener('scroll', closeShareFly, { passive: true })
+
+      function shareTargets() {
+        const list = state.defaults && state.defaults.shareTargets
+        return Array.isArray(list) ? list.filter((t) => t && typeof t.id === 'string') : []
+      }
+      const targets = shareTargets()
+      shareBtn.title =
+        state.defaults && state.defaults.shareAsk && targets.length > 1
+          ? 'Download, then share…'
+          : 'Download, then share with ' + (targets[0] ? targets[0].label : 'the Windows share panel')
+      shareBtn.setAttribute('aria-label', shareBtn.title)
+      shareBtn.addEventListener('click', () => {
+        const list = shareTargets()
+        if (state.defaults && state.defaults.shareAsk && list.length > 1) {
+          if (shareFly) closeShareFly()
+          else openShareFly(list)
+          return
+        }
+        void enqueue({ shareWhenDone: true, shareTarget: list[0] ? list[0].id : undefined })
+      })
 
       root.append(head, mid, foot)
 
@@ -651,11 +765,13 @@
         if (state.kind === 'video') {
           const rows = rowsByHeight.get(state.quality) || []
           go.disabled = state.busy || !rows.some((r) => r.container === state.container)
+          shareBtn.disabled = go.disabled
           goSub.textContent =
             qualityLabel(state.quality) + ' · ' + (state.container || '').toUpperCase() +
             ' · ' + sizeText(state.quality, state.container)
         } else {
           go.disabled = state.busy || !state.groups.length
+          shareBtn.disabled = go.disabled
           const label = state.audioFmt === 'best' ? 'Original' : state.audioFmt.toUpperCase()
           const grp = state.groups.find((g) => (g.language || '') === state.audioLang)
           const lang = state.groups.length >= 2 && grp ? ' · ' + langLabel(grp.language) : ''
@@ -827,70 +943,11 @@
       vTab.addEventListener('click', () => switchTab('video'))
       aTab.addEventListener('click', () => switchTab('audio'))
 
-      // ---- download → collapse the middle, run progress in the footer ----
-      function collapseMid() {
-        mid.style.overflow = 'hidden'
-        if (noMotion) { mid.style.maxHeight = '0'; mid.style.opacity = '0'; return }
-        mid.style.maxHeight = mid.scrollHeight + 'px'
-        void mid.offsetHeight
-        mid.style.transition = 'max-height .3s ease, opacity .2s ease'
-        mid.style.maxHeight = '0'
-        mid.style.opacity = '0'
-      }
 
-      function renderProgress(job) {
-        const percent = Math.max(0, Math.min(100, Number(job.progress) || 0))
-        progLabel.textContent =
-          job.status === 'queued' ? 'Waiting…' : job.status === 'processing' ? 'Finishing…' : 'Downloading'
-        progPct.textContent = Math.round(percent) + '%'
-        fill.style.width = percent + '%'
-        progSpeed.textContent = job.speed || job.sizeLabel || ''
-        progEta.textContent = job.eta ? 'ETA ' + job.eta : ''
-      }
-
-      function renderDone() {
-        state.jobId = null
-        root.classList.remove('stage-progress')
-        root.classList.add('stage-done')
-        setTimeout(() => closePanel(), 1500)
-      }
-
-      async function pollJob() {
-        if (!state.jobId || !panel || panel.host !== host) return
-        const res = await sendMessage({ type: 'snag:job', jobId: state.jobId })
-        if (!state.jobId || !panel || panel.host !== host) return
-        const job = res.ok && res.data && res.data.job
-        if (!job) {
-          state.jobId = null
-          renderError((res.data && res.data.error) || 'Could not read download progress.')
-          return
-        }
-        if (job.status === 'completed') { renderDone(); return }
-        if (job.status === 'error' || job.status === 'canceled') {
-          state.jobId = null
-          renderError(job.errorMessage || 'The download stopped.')
-          return
-        }
-        renderProgress(job)
-        state.pollTimer = setTimeout(pollJob, 500)
-      }
-
-      // Cancel puts the picker right back — a canceled download usually means
-      // the wrong quality was picked, so choosing again should be one tap away.
-      function cancelDownload() {
-        state.cancelRequested = true
-        const id = state.jobId
-        state.jobId = null
-        if (state.pollTimer) clearTimeout(state.pollTimer)
-        if (id) void sendMessage({ type: 'snag:cancel', jobId: id })
-        state.busy = false
-        renderReady()
-      }
-      cancelBtn.addEventListener('click', cancelDownload)
-
-      async function enqueue() {
-        if (state.busy || state.jobId) return
-        state.cancelRequested = false
+      // `extra` merges into the request: { shareWhenDone, shareTarget } for the
+      // Share button.
+      async function enqueue(extra) {
+        if (state.busy) return
         const info = state.info
         let request
         if (state.kind === 'video') {
@@ -923,34 +980,39 @@
           }
         }
 
+        if (extra) Object.assign(request, extra)
         state.busy = true
         updateGo()
-        collapseMid()
-        root.classList.add('stage-progress')
-        renderProgress({ status: 'queued', progress: 0 })
-        progLabel.textContent = 'Starting…'
+        goLabel.textContent = 'Adding…'
 
         const res = await sendMessage({ type: 'snag:enqueue', request })
         state.busy = false
         if (!panel || panel.host !== host) return
-        // Canceled while the job was still being created: kill it quietly; the
-        // picker is already back on screen.
-        if (state.cancelRequested) {
-          const lateJobId = res.ok && res.data && res.data.jobId
-          if (lateJobId) void sendMessage({ type: 'snag:cancel', jobId: lateJobId })
-          return
-        }
         if (res.ok && res.data && res.data.ok && res.data.jobId) {
-          state.jobId = res.data.jobId
-          void pollJob()
+          // The thumbnail flies from the panel into the corner toast, which
+          // then follows the download; the panel itself is done.
+          trackDownload(
+            res.data.jobId,
+            {
+              title: info.title || meta.title,
+              thumbnail: info.thumbnail || meta.thumbnail,
+              label: request.selectionLabel + (request.shareWhenDone ? ' · then share' : '')
+            },
+            head.querySelector('.thumb') || head.querySelector('.dot')
+          )
+          closePanel()
         } else if (res.error === 'not-running') {
-          renderNotRunning()
+          goLabel.textContent = 'Download'
+          updateGo()
+          launchSnag()
         } else {
+          goLabel.textContent = 'Download'
+          updateGo()
           renderError((res.data && res.data.error) || 'Could not add the download.')
         }
       }
 
-      go.addEventListener('click', () => void enqueue())
+      go.addEventListener('click', () => void enqueue(null))
 
       buildVideoView()
       buildAudioView()
@@ -959,13 +1021,28 @@
 
     async function start() {
       renderLoading('Reading video…')
+      const ping = await sendMessage({ type: 'snag:ping' })
+      if (!panel || panel.host !== host) return
+      if (!ping || !ping.running) {
+        launchSnag()
+        return
+      }
+      await loadAndRender()
+    }
+
+    async function loadAndRender() {
+      renderLoading('Reading video…')
       const [defaultsRes, analyzeRes] = await Promise.all([
         sendMessage({ type: 'snag:defaults' }),
         requestAnalysis(pageUrl)
       ])
       if (!panel || panel.host !== host) return
-      if (analyzeRes.error === 'not-running' || analyzeRes.error === 'not-paired' || analyzeRes.error === 'extension') {
-        renderNotRunning()
+      if (analyzeRes.error === 'not-running' || analyzeRes.error === 'extension') {
+        launchSnag()
+        return
+      }
+      if (analyzeRes.error === 'not-paired') {
+        renderNotRunning('Snag is running but refused the connection. Reload the extension once.')
         return
       }
       const data = analyzeRes.data
@@ -1015,6 +1092,10 @@
 
   // ---------- Floating button (unchanged behavior, new click target) ----------
 
+  function targetUrlFor(btn) {
+    return btn._snagTarget ? btn._snagTarget.url : resolveTargetUrl(btn._snagVideo)
+  }
+
   function makeButton(video) {
     const btn = document.createElement('button')
     btn._snagVideo = video
@@ -1025,7 +1106,7 @@
     // Hovering is a strong hint that a click is coming: start (or reuse) the
     // analysis right away so the picker is ready when the panel opens.
     btn.addEventListener('pointerenter', () => {
-      const url = resolveTargetUrl(btn._snagVideo)
+      const url = targetUrlFor(btn)
       if (!analysisByUrl.has(url)) void requestAnalysis(url)
     })
     btn.addEventListener(
@@ -1037,9 +1118,9 @@
           if (panel.anchor === btn) closePanel()
           else {
             closePanel(true)
-            openPanel(btn, btn._snagVideo)
+            openPanel(btn, btn._snagVideo, btn._snagTarget)
           }
-        } else openPanel(btn, btn._snagVideo)
+        } else openPanel(btn, btn._snagVideo, btn._snagTarget)
       },
       true
     )
@@ -1061,79 +1142,546 @@
     return true
   }
 
-  // Player controls the button must never sit on top of (YouTube Shorts keeps
-  // mute/captions/more in the top-right corner, other players put share or
-  // settings there). Anything clickable found under the intended spot pushes
-  // the button further down the video's edge.
+  // Player controls the button must never sit on top of (mute/captions on
+  // YouTube's hover previews, share or settings on other players). The button
+  // goes below the whole cluster of controls in its column — never wedged in
+  // between two of them — and stays at the corner when the corner is free.
   const CONTROL_SELECTOR =
     'button, a[href], input, select, textarea, [role="button"], [role="slider"], [role="menuitem"], [role="link"], [role="checkbox"], [role="switch"]'
-  const PLACEMENT_STEPS = [0, 44, 88, 132]
+  const PROBE_STEP = 8
+  const PROBE_LIMIT = 220
+  const CLUSTER_GAP = 6
   const PLACEMENT_RECHECK_MS = 1500
+  // Anything larger than this under the button is a wrapper or a card link,
+  // not an overlay control (mute, captions, share are all well under it).
+  const MAX_CONTROL_SIZE = 120
 
-  function blockedAt(left, top, btn, video) {
+  function controlAt(x, y, btn, video) {
     let stack
     try {
-      stack = document.elementsFromPoint(left + BTN_SIZE / 2, top + BTN_SIZE / 2)
+      stack = document.elementsFromPoint(x, y)
     } catch {
-      return false
+      return null
     }
     for (const node of stack) {
       if (node === btn || (node.dataset && node.dataset.snagPanel)) continue
-      if (node === video) return false
+      if (node.classList && node.classList.contains('snag-dl-btn')) continue
+      if (node === video) return null
       const control = node.closest ? node.closest(CONTROL_SELECTOR) : null
-      // A link wrapping the whole player is not a control in the way.
-      if (control && !control.contains(video)) return true
+      if (!control) continue
+      // A link wrapping the whole player is not a control in the way, and
+      // neither is any card-sized element.
+      if (video && control.contains(video)) return null
+      const r = control.getBoundingClientRect()
+      if (r.width > MAX_CONTROL_SIZE || r.height > MAX_CONTROL_SIZE) return null
+      return control
     }
-    return false
+    return null
+  }
+
+  // Bars fixed to the top of the viewport (YouTube's masthead) float above a
+  // scrolled player; the button must not slide underneath them.
+  function fixedTopInset(x, video) {
+    let stack
+    try {
+      stack = document.elementsFromPoint(x, 4)
+    } catch {
+      return 0
+    }
+    let inset = 0
+    for (const node of stack) {
+      if (!(node instanceof Element) || node === document.documentElement || node === document.body) continue
+      if (node === video || (video && node.contains(video))) continue
+      if (node.classList && node.classList.contains('snag-dl-btn')) continue
+      if (node.dataset && node.dataset.snagPanel) continue
+      const pos = getComputedStyle(node).position
+      if (pos !== 'fixed' && pos !== 'sticky') continue
+      const r = node.getBoundingClientRect()
+      if (r.top <= 4 && r.bottom > inset && r.bottom < innerHeight * 0.4) inset = r.bottom
+    }
+    return inset
   }
 
   // Height of a player's top bar when it has one (classic YouTube layout),
   // so the button starts below it instead of colliding on hover.
   function playerTopChrome(video) {
-    const player = video.closest && video.closest('.html5-video-player')
+    const player = video && video.closest && video.closest('.html5-video-player')
     const top = player && player.querySelector('.ytp-chrome-top')
     if (!top) return 0
     const h = top.getBoundingClientRect().height
     return h > 0 && h < 120 ? h : 0
   }
 
+  // The part of a video that can actually be seen: hover previews and some
+  // players crop a larger <video> behind an overflow-hidden frame, and the
+  // button belongs in the corner of the visible picture, not the hidden one.
+  function visibleRect(video) {
+    const b = video.getBoundingClientRect()
+    const r = { left: b.left, top: b.top, right: b.right, bottom: b.bottom }
+    let node = video.parentElement
+    for (let i = 0; node && i < 8; i++, node = node.parentElement) {
+      const style = getComputedStyle(node)
+      if (style.overflowX === 'visible' && style.overflowY === 'visible' && style.clipPath === 'none') continue
+      const c = node.getBoundingClientRect()
+      if (c.width === 0 || c.height === 0) continue
+      r.left = Math.max(r.left, c.left)
+      r.top = Math.max(r.top, c.top)
+      r.right = Math.min(r.right, c.right)
+      r.bottom = Math.min(r.bottom, c.bottom)
+    }
+    r.width = Math.max(0, r.right - r.left)
+    r.height = Math.max(0, r.bottom - r.top)
+    return r
+  }
+
+  // Offset below `baseTop` at which the button clears every overlay control
+  // in its column — the fallback when there is no room beside them.
+  function clearOffset(left, baseTop, maxTop, btn, video) {
+    const x = left + BTN_SIZE / 2
+    const rects = []
+    const seen = new Set()
+    const limit = Math.min(baseTop + PROBE_LIMIT, maxTop + BTN_SIZE)
+    for (let y = baseTop; y <= limit; y += PROBE_STEP) {
+      const control = controlAt(x, y, btn, video)
+      if (control && !seen.has(control)) {
+        seen.add(control)
+        rects.push(control.getBoundingClientRect())
+      }
+    }
+    let top = baseTop
+    for (let guard = 0; guard < 12; guard++) {
+      const hit = rects.filter((r) => r.top < top + BTN_SIZE + CLUSTER_GAP && r.bottom > top - CLUSTER_GAP)
+      if (!hit.length) break
+      top = Math.max(...hit.map((r) => r.bottom)) + CLUSTER_GAP
+    }
+    return Math.max(0, Math.round(top - baseTop))
+  }
+
+  // Where the button goes relative to the top-right corner slot: the corner
+  // itself when it is free; otherwise directly left of the whole group of
+  // controls sitting there (mute, captions), so it always stays on the top
+  // edge in a familiar spot. Only when that would leave the picture does it
+  // drop below the controls instead.
+  function cornerPlacement(left, baseTop, visLeft, maxTop, btn, video) {
+    const y = baseTop + BTN_SIZE / 2
+    const rects = []
+    const seen = new Set()
+    const minX = Math.max(visLeft + INSET, left - 360)
+    for (let x = left + BTN_SIZE / 2; x >= minX; x -= PROBE_STEP) {
+      const control = controlAt(x, y, btn, video)
+      if (control && !seen.has(control)) {
+        seen.add(control)
+        rects.push(control.getBoundingClientRect())
+      }
+    }
+    let slotLeft = left
+    let hit = false
+    for (let guard = 0; guard < 12; guard++) {
+      const touching = rects.filter(
+        (r) =>
+          r.right > slotLeft - CLUSTER_GAP &&
+          r.left < slotLeft + BTN_SIZE + CLUSTER_GAP &&
+          r.bottom > baseTop - CLUSTER_GAP &&
+          r.top < baseTop + BTN_SIZE + CLUSTER_GAP
+      )
+      if (!touching.length) break
+      hit = true
+      slotLeft = Math.min(...touching.map((r) => r.left)) - CLUSTER_GAP - BTN_SIZE
+    }
+    if (!hit) return { dx: 0, dy: 0 }
+    if (slotLeft >= visLeft + INSET) return { dx: Math.round(slotLeft - left), dy: 0 }
+    return { dx: 0, dy: clearOffset(left, baseTop, maxTop, btn, video) }
+  }
+
   // Returns false when the visible part of the video is too small to host
   // the button (mostly scrolled out of view).
   function position(video, btn) {
-    const rect = video.getBoundingClientRect()
-    const visTop = Math.max(rect.top, 0)
-    const visBottom = Math.min(rect.bottom, innerHeight)
+    const rect = visibleRect(video)
     const visLeft = Math.max(rect.left, 0)
     const visRight = Math.min(rect.right, innerWidth)
+    const left = visRight - BTN_SIZE - INSET
+    const headerBottom = fixedTopInset(left + BTN_SIZE / 2, video)
+    const visTop = Math.max(rect.top, headerBottom)
+    const visBottom = Math.min(rect.bottom, innerHeight)
     if (visBottom - visTop < BTN_SIZE + 2 * INSET || visRight - visLeft < BTN_SIZE + 2 * INSET) return false
 
-    const left = visRight - BTN_SIZE - INSET
-    const baseTop = rect.top >= 0 ? rect.top + INSET + playerTopChrome(video) : visTop + INSET
+    const baseTop = rect.top >= headerBottom ? rect.top + INSET + playerTopChrome(video) : visTop + INSET
     const maxTop = visBottom - BTN_SIZE - INSET
 
     const now = performance.now()
-    const place = btn._snagPlace || (btn._snagPlace = { offset: 0, key: '', checkedAt: 0 })
+    const place = btn._snagPlace || (btn._snagPlace = { dx: 0, dy: 0, key: '', checkedAt: 0 })
     const key = Math.round(rect.width) + 'x' + Math.round(rect.height) + '@' + Math.round(baseTop)
     if (key !== place.key || now - place.checkedAt > PLACEMENT_RECHECK_MS) {
       place.key = key
       place.checkedAt = now
-      // Keep the current offset while it is still clear; otherwise walk down.
-      const order = place.offset ? [place.offset, ...PLACEMENT_STEPS] : PLACEMENT_STEPS
-      let chosen = 0
-      for (const offset of order) {
-        const top = baseTop + offset
-        if (top > maxTop) continue
-        if (!blockedAt(left, top, btn, video)) {
-          chosen = offset
-          break
-        }
-      }
-      place.offset = chosen
+      const spot = cornerPlacement(left, baseTop, visLeft, maxTop, btn, video)
+      place.dx = spot.dx
+      place.dy = spot.dy
     }
-    btn.style.left = left + 'px'
-    btn.style.top = Math.min(baseTop + place.offset, maxTop) + 'px'
+    btn.style.left = left + place.dx + 'px'
+    btn.style.top = Math.min(baseTop + place.dy, maxTop) + 'px'
     return true
   }
+
+  // ---------- Corner toasts: one per running download ----------
+
+  const TOAST_CSS = `
+    :host { all: initial; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+    .list { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+    .card {
+      width: 300px; display: flex; gap: 10px; align-items: center; padding: 9px 10px;
+      background: linear-gradient(180deg, #191c23, #14161c); color: #eef0f3;
+      border: 1px solid rgba(255,255,255,0.14); border-radius: 14px;
+      box-shadow: 0 18px 44px -16px rgba(0,0,0,0.85);
+      opacity: 0; transform: translateY(14px) scale(0.96);
+      transition: opacity .25s ease, transform .32s cubic-bezier(.2,.9,.3,1.15);
+    }
+    .card.in { opacity: 1; transform: none; }
+    .card.out { opacity: 0; transform: translateY(8px) scale(0.97); }
+    .thumb { position: relative; width: 52px; height: 32px; border-radius: 7px; overflow: hidden; flex-shrink: 0; background: linear-gradient(135deg,#2c3446 0%,#1a2030 55%,#39303f 100%); }
+    .thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .thumb .ok { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(198,242,77,0.94); opacity: 0; transition: opacity .2s; }
+    .card.done .thumb .ok { opacity: 1; }
+    .ok svg { width: 20px; height: 20px; stroke: #17200a; fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 24; stroke-dashoffset: 24; }
+    .card.done .ok svg { animation: snagCheck .45s .12s cubic-bezier(.3,.8,.3,1) forwards; }
+    @keyframes snagCheck { to { stroke-dashoffset: 0; } }
+    .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+    .t { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 11px; color: #a7adb7; white-space: nowrap; }
+    .row span { overflow: hidden; text-overflow: ellipsis; }
+    .row strong { color: #c6f24d; font-weight: 800; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+    .track { height: 5px; border-radius: 999px; background: #0f1116; border: 1px solid rgba(255,255,255,0.08); overflow: hidden; }
+    .fill { height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg,#aee235,#d5ff63); transition: width .35s ease; }
+    .card.done .fill { width: 100% !important; }
+    .card.err .fill { background: #ff6b5e; }
+    .card.err .row { color: #ff9d94; white-space: normal; }
+    .card.done .row strong { color: #eef0f3; }
+    .x { width: 24px; height: 24px; border: 0; background: none; color: #a7adb7; cursor: pointer; border-radius: 7px; font-size: 13px; flex-shrink: 0; }
+    .x:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    @media (prefers-reduced-motion: reduce) { .card, .fill, .ok, .ok svg { transition: none !important; animation-duration: 0.001ms !important; } }
+  `
+  const CHECK = '<svg viewBox="0 0 24 24"><path d="m5 12 5 5L20 6"/></svg>'
+
+  let toastList = null
+  const toasts = new Map() // jobId -> { card, timer, done }
+
+  function ensureToastList() {
+    if (toastList && toastList.isConnected) return toastList
+    const host = el('div', 'snag-toast-host')
+    host.dataset.snagPanel = 'true'
+    host.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;pointer-events:none;zoom:' + uiScale() + ';'
+    const shadow = host.attachShadow({ mode: 'open' })
+    const sheet = new CSSStyleSheet()
+    sheet.replaceSync(TOAST_CSS)
+    shadow.adoptedStyleSheets = [sheet]
+    toastList = el('div', 'list')
+    toastList.style.pointerEvents = 'auto'
+    shadow.appendChild(toastList)
+    document.documentElement.appendChild(host)
+    return toastList
+  }
+
+  // A copy of the panel's thumbnail arcs down into the corner where the
+  // toast is about to appear — the download visibly leaves the page.
+  function flyToCorner(fromEl, done) {
+    const noMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
+    const from = fromEl && fromEl.isConnected ? fromEl.getBoundingClientRect() : null
+    if (noMotion || !from || from.width < 4) {
+      done()
+      return
+    }
+    const ghost = el('div')
+    ghost.dataset.snagPanel = 'true'
+    ghost.style.cssText =
+      'position:fixed;z-index:2147483647;pointer-events:none;overflow:hidden;border-radius:8px;' +
+      'background:linear-gradient(150deg,#c6f24d,#a9e02f);box-shadow:0 12px 30px -10px rgba(0,0,0,.7);' +
+      `left:${from.left}px;top:${from.top}px;width:${from.width}px;height:${from.height}px;`
+    const img = fromEl.querySelector('img')
+    if (img && img.currentSrc) {
+      const copy = document.createElement('img')
+      copy.src = img.currentSrc
+      copy.referrerPolicy = 'no-referrer'
+      copy.style.cssText = 'display:block;width:100%;height:100%;object-fit:cover;'
+      ghost.appendChild(copy)
+    }
+    document.documentElement.appendChild(ghost)
+    const scale = uiScale()
+    const toX = innerWidth - (16 + 300 - 10) * scale
+    const toY = innerHeight - (16 + 50 - 9) * scale
+    const dx = toX - from.left
+    const dy = toY - from.top
+    let finished = false
+    const finish = () => {
+      if (finished) return
+      finished = true
+      ghost.remove()
+      done()
+    }
+    try {
+      const anim = ghost.animate(
+        [
+          { transform: 'translate(0,0) scale(1)', opacity: 1, offset: 0 },
+          { transform: `translate(${dx * 0.5}px, ${dy * 0.18}px) scale(0.8)`, opacity: 1, offset: 0.42, easing: 'cubic-bezier(.2,.9,.4,1)' },
+          { transform: `translate(${dx}px, ${dy}px) scale(0.3)`, opacity: 0.25, offset: 1 }
+        ],
+        { duration: 640, easing: 'cubic-bezier(.4,.6,.3,1)', fill: 'forwards' }
+      )
+      anim.onfinish = finish
+      anim.oncancel = finish
+    } catch {
+      finish()
+    }
+    setTimeout(finish, 900)
+  }
+
+  function trackDownload(jobId, meta, fromEl) {
+    const list = ensureToastList()
+    const card = el('div', 'card')
+    const thumb = el('span', 'thumb')
+    if (meta.thumbnail) {
+      const img = document.createElement('img')
+      img.alt = ''
+      img.referrerPolicy = 'no-referrer'
+      img.addEventListener('error', () => img.remove())
+      img.src = meta.thumbnail
+      thumb.appendChild(img)
+    }
+    const ok = el('span', 'ok')
+    ok.innerHTML = CHECK
+    thumb.appendChild(ok)
+    const body = el('div', 'body')
+    const title = el('div', 't', meta.title || 'Download')
+    title.title = meta.title || ''
+    const row = el('div', 'row')
+    const status = el('span', null, 'Starting…')
+    const pct = el('strong', 'num', '')
+    row.append(status, pct)
+    const track = el('div', 'track')
+    const fill = el('div', 'fill')
+    track.appendChild(fill)
+    const detail = el('div', 'row')
+    const speed = el('span', 'num', meta.label || '')
+    const eta = el('span', 'num', '')
+    detail.append(speed, eta)
+    body.append(title, row, track, detail)
+    const x = el('button', 'x', '✕')
+    x.type = 'button'
+    x.title = 'Cancel download'
+    x.setAttribute('aria-label', 'Cancel download')
+    card.append(thumb, body, x)
+    list.appendChild(card)
+
+    const entry = { card, timer: null, settled: false }
+    toasts.set(jobId, entry)
+
+    const remove = () => {
+      if (entry.timer) clearTimeout(entry.timer)
+      toasts.delete(jobId)
+      card.classList.add('out')
+      card.classList.remove('in')
+      setTimeout(() => card.remove(), 300)
+    }
+    x.addEventListener('click', () => {
+      if (!entry.settled) void sendMessage({ type: 'snag:cancel', jobId })
+      remove()
+    })
+
+    const settle = (state, message) => {
+      entry.settled = true
+      card.classList.add(state)
+      x.title = 'Dismiss'
+      x.setAttribute('aria-label', 'Dismiss')
+      if (state === 'done') {
+        status.textContent = 'Saved to your folder'
+        pct.textContent = '✓'
+        speed.textContent = meta.label || ''
+        eta.textContent = ''
+        entry.timer = setTimeout(remove, 4200)
+      } else {
+        status.textContent = message || 'The download stopped.'
+        pct.textContent = ''
+        speed.textContent = ''
+        eta.textContent = ''
+      }
+    }
+
+    const poll = async () => {
+      if (!toasts.has(jobId) || entry.settled) return
+      const res = await sendMessage({ type: 'snag:job', jobId })
+      if (!toasts.has(jobId) || entry.settled) return
+      const job = res.ok && res.data && res.data.job
+      if (!job) {
+        settle('err', res.error === 'not-running' ? 'Snag closed — check its queue.' : (res.data && res.data.error) || 'Lost track of this download.')
+        return
+      }
+      if (job.status === 'completed') {
+        settle('done')
+        return
+      }
+      if (job.status === 'error' || job.status === 'canceled') {
+        settle('err', job.status === 'canceled' ? 'Canceled.' : job.errorMessage || 'The download failed.')
+        return
+      }
+      const percent = Math.max(0, Math.min(100, Number(job.progress) || 0))
+      status.textContent =
+        job.status === 'queued' ? 'Waiting…'
+          : job.status === 'paused' ? 'Paused'
+            : job.status === 'processing' ? (job.phase || 'Finishing') + '…'
+              : 'Downloading'
+      pct.textContent = Math.round(percent) + '%'
+      fill.style.width = percent + '%'
+      speed.textContent = job.speed || job.sizeLabel || meta.label || ''
+      eta.textContent = job.eta ? 'ETA ' + job.eta : ''
+      entry.timer = setTimeout(poll, 600)
+    }
+
+    flyToCorner(fromEl, () => {
+      requestAnimationFrame(() => card.classList.add('in'))
+      void poll()
+    })
+  }
+
+  // ---------- Thumbnail hover button (YouTube grids, sidebars, search) ----------
+
+  const THUMB_LINK_SELECTOR = 'a[href*="/watch?v="], a[href*="/shorts/"]'
+  const THUMB_BTN_INSET = 6
+  let thumbBtn = null
+  let thumbLink = null
+  let thumbHideTimer = null
+  let thumbPrefetchTimer = null
+
+  // YouTube watch/shorts links: on youtube.com any relative link counts;
+  // elsewhere only absolute links into youtube.com (embedded thumbnails).
+  function watchUrlFrom(href) {
+    try {
+      const parsed = new URL(href, location.origin)
+      if (!IS_YT && !/(^|.)(youtube.com|youtu.be)$/i.test(parsed.hostname)) return null
+      const id = parsed.searchParams.get('v')
+      if (id && /^[\w-]{6,}$/.test(id)) return { id, url: `https://www.youtube.com/watch?v=${id}` }
+      const short = parsed.pathname.match(/^\/shorts\/([\w-]{6,})/)
+      if (short) return { id: short[1], url: `https://www.youtube.com/shorts/${short[1]}` }
+    } catch {
+      /* not a video link */
+    }
+    return null
+  }
+
+  // The picture link of a video card: big enough, carries an image, and is
+  // not the player itself.
+  function thumbnailLink(node) {
+    if (!node || !node.closest) return null
+    const link = node.closest(THUMB_LINK_SELECTOR)
+    if (!link || !watchUrlFrom(link.href)) return null
+    if (!link.querySelector('img, yt-image, yt-img-shadow, yt-thumbnail-view-model')) return null
+    if (link.querySelector('video') || link.closest('ytd-video-preview, .html5-video-player')) return null
+    const r = link.getBoundingClientRect()
+    if (r.width < 110 || r.height < 60) return null
+    return link
+  }
+
+  function thumbMeta(link) {
+    const target = watchUrlFrom(link.href)
+    const card = link.closest(
+      'ytd-rich-item-renderer, ytd-compact-video-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer, yt-lockup-view-model, ytm-shorts-lockup-view-model, ytd-reel-item-renderer'
+    )
+    const titleEl = card && card.querySelector('#video-title, .yt-lockup-metadata-view-model__title, h3, [title]')
+    const title = (
+      (titleEl && (titleEl.getAttribute('title') || titleEl.textContent)) ||
+      link.getAttribute('aria-label') ||
+      link.getAttribute('title') ||
+      ''
+    ).replace(/\s+/g, ' ').trim()
+    return { url: target.url, title, thumbnail: `https://i.ytimg.com/vi/${target.id}/hqdefault.jpg` }
+  }
+
+  function placeThumbButton() {
+    if (!thumbBtn || !thumbLink) return false
+    if (!thumbLink.isConnected) return false
+    const r = thumbLink.getBoundingClientRect()
+    if (r.width < 110 || r.height < 60 || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) return false
+    const top = Math.max(r.top + THUMB_BTN_INSET, fixedTopInset(r.left + THUMB_BTN_INSET + 15, null) + 4)
+    if (top + 30 > r.bottom - 4) return false
+    thumbBtn.style.left = r.left + THUMB_BTN_INSET + 'px'
+    thumbBtn.style.top = top + 'px'
+    return true
+  }
+
+  function hideThumbButton() {
+    if (thumbHideTimer) clearTimeout(thumbHideTimer)
+    thumbHideTimer = null
+    if (panel && thumbBtn && panel.anchor === thumbBtn) return
+    thumbLink = null
+    if (thumbBtn) thumbBtn.style.display = 'none'
+  }
+
+  function showThumbButton(link) {
+    if (!thumbBtn) {
+      thumbBtn = makeButton(null)
+      thumbBtn.classList.add('snag-thumb-btn')
+      thumbBtn.addEventListener('pointerenter', () => {
+        if (thumbHideTimer) clearTimeout(thumbHideTimer)
+        thumbHideTimer = null
+      })
+      thumbBtn.addEventListener('pointerleave', () => {
+        thumbHideTimer = setTimeout(hideThumbButton, 260)
+      })
+      document.documentElement.appendChild(thumbBtn)
+    }
+    thumbLink = link
+    thumbBtn._snagTarget = thumbMeta(link)
+    thumbBtn.style.display = placeThumbButton() ? 'block' : 'none'
+    // Resting on a card for a moment is a strong hint: start reading the
+    // video now so the panel is ready when the button gets clicked.
+    clearTimeout(thumbPrefetchTimer)
+    const url = thumbBtn._snagTarget.url
+    thumbPrefetchTimer = setTimeout(() => {
+      thumbPrefetchTimer = null
+      if (thumbLink === link && !analysisByUrl.has(url)) void requestAnalysis(url)
+    }, 600)
+  }
+
+  // Called from refresh(): follow scrolling.
+  function updateThumbButton() {
+    if (!thumbBtn || !thumbLink || thumbBtn.style.display === 'none') return
+    if (!placeThumbButton()) hideThumbButton()
+  }
+
+  // True while the thumbnail button is showing over the same spot as this
+  // video (YouTube's hover preview): that button stays, this video gets none.
+  function coveredByThumbButton(video) {
+    if (!thumbBtn || !thumbLink || thumbBtn.style.display === 'none' || !thumbLink.isConnected) return false
+    const r = thumbLink.getBoundingClientRect()
+    const v = video.getBoundingClientRect()
+    return v.left < r.right && v.right > r.left && v.top < r.bottom && v.bottom > r.top
+  }
+
+  function pointerInsideThumb(e) {
+    if (!thumbLink || !thumbLink.isConnected) return false
+    const r = thumbLink.getBoundingClientRect()
+    return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
+  }
+
+  document.addEventListener(
+    'pointerover',
+    (e) => {
+      if (disabled) return
+      const node = e.target
+      if (node === thumbBtn || (node.classList && node.classList.contains('snag-dl-btn'))) return
+      const link = thumbnailLink(node)
+      if (link) {
+        if (thumbHideTimer) clearTimeout(thumbHideTimer)
+        thumbHideTimer = null
+        if (link !== thumbLink) showThumbButton(link)
+      } else if (thumbLink && !thumbHideTimer) {
+        // The hover preview is a separate element drawn over the card; the
+        // pointer is still on the card as long as it is inside its box.
+        if (pointerInsideThumb(e)) return
+        thumbHideTimer = setTimeout(hideThumbButton, 260)
+      }
+    },
+    true
+  )
 
   let lastHref = location.href
 
@@ -1143,13 +1691,16 @@
       lastHref = location.href
       closePanel(true)
     }
+    // Belt and braces for the scroll listener: a panel that has left the
+    // screen (smooth scrolling, programmatic jumps) folds away on the heartbeat.
+    if (panel && panelScrolledAway(panel.host)) closePanel()
     const videos = document.querySelectorAll('video')
     const currentVideos = new Set(videos)
     const seen = new Set()
     for (const video of videos) {
       seen.add(video)
       let btn = buttons.get(video)
-      if (eligible(video)) {
+      if (eligible(video) && !coveredByThumbButton(video)) {
         if (!btn) {
           // YouTube and other SPA players frequently replace the <video>
           // element while keeping the same visible player. Reuse the existing
@@ -1193,6 +1744,8 @@
         btn.style.display = 'none'
       }
     }
+    updateThumbButton()
+
     // Videos that left the DOM (SPA navigation) take their buttons with them.
     // An open panel stays where it is; it belongs to the video it was opened for.
     for (const [video, btn] of buttons) {

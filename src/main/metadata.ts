@@ -1,7 +1,7 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { languageLabel } from '@shared/languages'
-import { YOUTUBE_CLIENT_ARGS } from './args'
+import { YOUTUBE_CLIENT_ARGS, YOUTUBE_FAST_CLIENT_ARGS } from './args'
 import { AnalysisCache } from './analysisCache'
 import {
   locateYtdlp,
@@ -384,10 +384,7 @@ export async function analyze(
   // The playlist probe is a second yt-dlp run; start it alongside the main
   // analysis instead of after it so playlist links do not take twice as long.
   const [raw, playlist] = await Promise.all([
-    runYtdlpJson(
-      ['-J', '--no-playlist', '--no-warnings', '--ignore-config', ...extraArgs, ...YOUTUBE_CLIENT_ARGS, trimmed],
-      ytdlpOverride
-    ) as Promise<RawInfo>,
+    analyzeRaw(trimmed, ytdlpOverride, extraArgs),
     getPlaylistInfo(trimmed, ytdlpOverride, extraArgs)
   ])
   const preview = pickPreview(formats0(raw))
@@ -416,6 +413,34 @@ export async function analyze(
     previewUrl: preview.url,
     previewHasAudio: preview.hasAudio
   }
+}
+
+function isYouTubeUrl(url: string): boolean {
+  try {
+    return /(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/i.test(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
+// YouTube links: the fast client set first, the wider one only when the fast
+// run fails or comes back without formats (videos the default clients refuse).
+// Other sites ignore the client argument, so they get a single run.
+async function analyzeRaw(
+  url: string,
+  ytdlpOverride: string | null | undefined,
+  extraArgs: readonly string[]
+): Promise<RawInfo> {
+  const base = ['-J', '--no-playlist', '--no-warnings', '--ignore-config', ...extraArgs]
+  if (isYouTubeUrl(url)) {
+    try {
+      const fast = (await runYtdlpJson([...base, ...YOUTUBE_FAST_CLIENT_ARGS, url], ytdlpOverride)) as RawInfo
+      if ((fast.formats || []).length > 0) return fast
+    } catch {
+      /* fall through to the full client set */
+    }
+  }
+  return runYtdlpJson([...base, ...YOUTUBE_CLIENT_ARGS, url], ytdlpOverride) as Promise<RawInfo>
 }
 
 function formats0(raw: RawInfo): RawFormat[] {

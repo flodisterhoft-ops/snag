@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvxpKfn3ukrcHiIpzZ8XZACzOylBcHZBjntZG8/rWXEmhRHvse2f6m2euzv30YKcAaU3Vt0FztWkYL56tQLsQjCSgE3lj7/kZPkMrEBmYuGqjvoIU8SiRkGlAKEGD3DBaPALSZX8a25PAWhqEcZHkf/6BVjXlkrYSZCSgrb6J0Syw4lJVZZZXmlnkq7taho4pL6v8VdFYWFat0T57CBUq+EKzdK1Q3vZog3D7zAbL3avd89TW/jFUh8kUhsDQuE3F3mg2hkCzi7qeumOs64S3AVlLESnXW3wd3M8y1LINEGfVBuVJ7dT7bfVxZRzmPQcOGkOP8HyzpP8K+zQaX7kcJQIDAQAB",
   "name": "Snag for Chrome",
-  "version": "1.6.0",
+  "version": "1.7.1",
   "description": "Download videos with Snag — quality picker right on the page.",
   "icons": {
     "16": "icons/icon16.png",

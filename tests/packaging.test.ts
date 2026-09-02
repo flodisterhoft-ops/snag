@@ -2,6 +2,29 @@ import { readFileSync } from 'fs'
 import { describe, expect, it } from 'vitest'
 
 describe('Windows packaging', () => {
+  it('analyzes YouTube with the fast client set first and keeps the wide set for downloads', () => {
+    const metadata = readFileSync('src/main/metadata.ts', 'utf8')
+    const args = readFileSync('src/main/args.ts', 'utf8')
+    expect(args).toContain("export const YOUTUBE_FAST_CLIENT_ARGS = ['--extractor-args', 'youtube:player_client=default']")
+    expect(metadata).toContain('...YOUTUBE_FAST_CLIENT_ARGS, url]')
+    expect(metadata).toContain('return runYtdlpJson([...base, ...YOUTUBE_CLIENT_ARGS, url], ytdlpOverride)')
+    // Downloads still request the wider set, so analyzed format IDs always exist.
+    expect(args).toContain('...YOUTUBE_CLIENT_ARGS,')
+    expect(args).toContain("'--progress-template',")
+  })
+
+  it('pins and ships aria2 next to yt-dlp and ffmpeg', () => {
+    const manifest = JSON.parse(readFileSync('build/tools/TOOLS_MANIFEST.json', 'utf8')) as {
+      tools: { id: string; files: { output: string; sha256: string }[] }[]
+    }
+    const aria2 = manifest.tools.find((t) => t.id === 'aria2')
+    expect(aria2?.files.map((f) => f.output)).toEqual(['aria2c.exe', 'aria2-COPYING.txt'])
+    const builder = readFileSync('electron-builder.yml', 'utf8')
+    expect(builder).toContain('- aria2c.exe')
+    expect(builder).toContain('- aria2-COPYING.txt')
+    expect(readFileSync('build/tools/THIRD_PARTY_TOOLS.txt', 'utf8')).toContain('aria2 1.37.0')
+  })
+
   it('ships the tray image and retains an application-icon fallback', () => {
     const builder = readFileSync('electron-builder.yml', 'utf8')
     const tray = readFileSync('src/main/tray.ts', 'utf8')
@@ -28,7 +51,7 @@ describe('Windows packaging', () => {
     expect(content).toContain('requestAnalysis(pageUrl)')
     expect(content).toContain("video.closest('ytd-video-preview')")
     expect(content).toContain('https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}')
-    expect(content).toContain("el('strong', null, 'Opened in Snag')")
+    expect(content).toContain("renderLoading('Starting Snag…')")
     expect(content).not.toContain('void start()\n          return')
     expect(readFileSync('extension/background.js', 'utf8')).toContain("apiFetch(port, '/health'")
     expect(content).toContain('Set your preferred audio language in Settings.')
@@ -75,16 +98,33 @@ describe('Windows packaging', () => {
     expect(html).toContain("media-src 'self' https: http: blob:")
   })
 
+  it('answers every local API request through sendJson (1.8.5 shipped a self-calling reply helper)', () => {
+    const api = readFileSync('src/main/localApi.ts', 'utf8')
+    expect(api).toContain('const reply = (status: number, payload: unknown): void => sendJson(res, status, payload, origin)')
+    expect(api).not.toMatch(/=>\s*reply\(/)
+  })
+
   it('opens Telegram with the file and retains the Windows Share fallback', () => {
+    const share = readFileSync('src/main/share.ts', 'utf8')
     const ipc = readFileSync('src/main/ipc.ts', 'utf8')
-    expect(ipc).toContain("$verb.DoIt()")
-    expect(ipc).toContain("spawn(telegram, ['--', telegramTarget]")
-    expect(ipc).toContain("`${basename(target, extname(target))}.webm`")
-    expect(ipc).toContain('linkSync(target, shareTarget)')
+    const downloader = readFileSync('src/main/downloader.ts', 'utf8')
+    expect(share).toContain('$verb.DoIt()')
+    // Windows PowerShell 5.1 rejects Split-Path -LiteralPath together with -Parent, which
+    // made every Share panel request fail with 'could not open the Share panel'.
+    expect(share).not.toMatch(/\(Split-Path /)
+    expect(share).toContain('[System.IO.Path]::GetDirectoryName($target)')
+    expect(share).toContain('[System.IO.Path]::GetFileName($target)')
+    expect(share).toContain("join(process.env['APPDATA'], 'Telegram Desktop', 'Telegram.exe')")
+    expect(share).toContain("spawn(telegram, ['--', telegramTarget]")
+    expect(share).toContain("`${basename(target, extname(target))}.webm`")
+    expect(share).toContain('linkSync(target, shareTarget)')
+    expect(share).toContain('recentTelegramShares')
+    expect(share).toContain('return openWindowsShareSheet(target)')
     expect(ipc).toContain('cleanupTelegramMediaPath(job.filepath)')
-    expect(ipc).toContain('recentTelegramShares')
-    expect(ipc).toContain('return openWindowsShareSheet(target)')
     expect(ipc).toContain("handleTrusted('shareFile'")
     expect(ipc).toContain("handleTrusted('deleteCompletedFiles'")
+    // "Share when done" reuses the same path once a download finishes.
+    expect(downloader).toContain('job.request.shareWhenDone')
+    expect(downloader).toContain('void shareFile(path, job.request.shareTarget)')
   })
 })

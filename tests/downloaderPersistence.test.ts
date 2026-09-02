@@ -7,7 +7,7 @@ import type { DownloadJob } from '../src/shared/types'
 vi.mock('electron', () => ({ app: { getPath: () => 'C:\\SnagTest' } }))
 vi.mock('../src/main/notify', () => ({ notifyComplete: vi.fn(), notifyError: vi.fn() }))
 
-import { DownloadManager, parseRemuxDestination } from '../src/main/downloader'
+import { DownloadManager, findRenamedFile, parseAria2Readout, parseRemuxDestination } from '../src/main/downloader'
 
 const tempDirs: string[] = []
 
@@ -112,5 +112,35 @@ describe('download output parsing', () => {
       )
     ).toBe('C:\\Downloads\\clip.mp4')
     expect(parseRemuxDestination('[download] Destination: C:\\Downloads\\clip.webm')).toBeNull()
+  })
+})
+
+describe('parseAria2Readout', () => {
+  it('reads percent, speed, ETA, and total size from aria2c console lines', () => {
+    expect(parseAria2Readout('   [#a0872f 74MiB/354MiB(20%) CN:16 DL:97MiB ETA:2s]')).toEqual({
+      progress: 20,
+      speed: '97MiB/s',
+      eta: '2s',
+      sizeLabel: '354MiB'
+    })
+    // Speed and ETA vanish near the end; the last readout in a chunk wins.
+    expect(parseAria2Readout('[#a0872f 74MiB/354MiB(20%) CN:16] [#a0872f 284MiB/354MiB(80%) CN:16 DL:103MiB]')).toEqual({
+      progress: 80,
+      speed: '103MiB/s',
+      eta: null,
+      sizeLabel: '354MiB'
+    })
+    expect(parseAria2Readout('[download] Destination: video.mp4')).toBeNull()
+  })
+})
+
+describe('findRenamedFile', () => {
+  it('finds the real file when the console encoding lost an en dash or a full-width character', () => {
+    const files = ['Memories – Free Download.mp4', 'Will it work with vMix？.mkv', 'Other.mp4']
+    expect(findRenamedFile('C:\\dl\\Memories \uFFFD Free Download.mp4', () => files)).toMatch(/Memories – Free Download\.mp4$/)
+    expect(findRenamedFile('C:\\dl\\Will it work with vMix.mkv', () => files)).toMatch(/vMix？\.mkv$/)
+    // Wrong extension or an ambiguous match never guesses.
+    expect(findRenamedFile('C:\\dl\\Memories \uFFFD Free Download.mkv', () => files)).toBeNull()
+    expect(findRenamedFile('C:\\dl\\Other.mp4', () => ['Other.mp4', 'other!.mp4'])).toBeNull()
   })
 })

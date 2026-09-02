@@ -40,6 +40,18 @@ const request: DownloadRequest = {
 }
 
 describe('buildDownloadArgs', () => {
+  it('routes http and DASH through aria2c with the boost count when the aria2 engine is on', () => {
+    const aria = { ...settings, downloadEngine: 'aria2' as const, concurrentFragments: 12 }
+    const args = buildDownloadArgs(request, aria, { ffmpegLocation: null, aria2cPath: 'C:/Snag/tools/aria2c.exe' })
+    expect(args[args.indexOf('--downloader') + 1]).toBe('http:C:/Snag/tools/aria2c.exe')
+    expect(args[args.indexOf('--downloader-args') + 1]).toBe('aria2c:-x12 -s12 -k1M --enable-color=false')
+    // Without the executable the setting is inert instead of breaking downloads.
+    const fallback = buildDownloadArgs(request, aria, { ffmpegLocation: null, aria2cPath: null })
+    expect(fallback).not.toContain('--downloader')
+    // The built-in engine never mentions aria2c.
+    expect(buildDownloadArgs(request, settings, { ffmpegLocation: null, aria2cPath: 'C:/x/aria2c.exe' })).not.toContain('--downloader')
+  })
+
   it('uses eight fragments without a rate cap for maximum speed settings', () => {
     const args = buildDownloadArgs(request, settings, { ffmpegLocation: 'C:\\Tools' })
     expect(args).toContain('--concurrent-fragments')

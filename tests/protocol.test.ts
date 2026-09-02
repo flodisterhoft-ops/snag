@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   parseDeepLink,
+  parseDeepLinkAction,
   deepLinkFromArgv,
   isHttpUrl,
   isSafeExternalUrl
@@ -8,6 +9,14 @@ import {
 
 const target = 'https://www.youtube.com/watch?v=aqz-KE-bpKQ'
 const link = `snag://download?url=${encodeURIComponent(target)}`
+
+describe('parseDeepLinkAction', () => {
+  it('recognizes the plain start link the extension uses', () => {
+    expect(parseDeepLinkAction('snag://open')).toEqual({ kind: 'open' })
+    expect(parseDeepLinkAction('snag:///open')).toEqual({ kind: 'open' })
+    expect(parseDeepLink('snag://open')).toBeNull()
+  })
+})
 
 describe('parseDeepLink', () => {
   it('extracts the target from a valid deep link', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { ReactNode, useEffect, useMemo, useState } from 'react'
 import type {
   MediaInfo,
   Settings,
@@ -10,7 +10,7 @@ import type {
   VideoFormat
 } from '@shared/types'
 import { formatBytes } from '../lib/format'
-import { Icon, Segmented, Toggle } from './ui'
+import { Icon, Segmented } from './ui'
 import { useStore } from '../store'
 import {
   filterVideoFormatsForContainer,
@@ -27,21 +27,24 @@ export interface FormatSelection {
   audioLanguage?: string | null
   audioOutputFormat?: AudioOutputFormat
   selectionLabel: string
+  // Human-readable total size of what will be fetched, when known.
+  sizeLabel?: string
   valid: boolean
 }
 
 const AUDIO_FORMATS: { value: AudioOutputFormat; label: string; hint: string }[] = [
-  { value: 'mp3', label: 'MP3', hint: 'universal' },
-  { value: 'm4a', label: 'M4A', hint: 'aac' },
-  { value: 'opus', label: 'Opus', hint: 'efficient' },
-  { value: 'wav', label: 'WAV', hint: 'lossless' },
-  { value: 'flac', label: 'FLAC', hint: 'lossless' },
-  { value: 'best', label: 'Original', hint: 'no re-encode' }
+  { value: 'mp3', label: 'MP3', hint: 'Plays everywhere' },
+  { value: 'm4a', label: 'M4A', hint: 'AAC' },
+  { value: 'opus', label: 'Opus', hint: 'Small files' },
+  { value: 'wav', label: 'WAV', hint: 'Lossless' },
+  { value: 'flac', label: 'FLAC', hint: 'Lossless' },
+  { value: 'best', label: 'Original', hint: 'No re-encode' }
 ]
 
 const CONTAINERS: VideoContainer[] = ['mp4', 'mkv', 'webm']
 
 const EMPTY_AUDIO_FORMATS: AudioFormat[] = []
+const EMPTY_ROWS: BestRow[] = []
 
 const groupKey = (lang: string | null): string => lang ?? '__default__'
 
@@ -178,14 +181,18 @@ function bestRowFor(
   return { container, video, audioTracks, totalSize, sizeIsApprox }
 }
 
+// `children` render in the side column next to the quality table (options,
+// folder, Download button), under the audio-track chips when a video has dubs.
 export function FormatPicker({
   info,
   settings,
-  onChange
+  onChange,
+  children
 }: {
   info: MediaInfo
   settings: Settings
   onChange: (s: FormatSelection) => void
+  children?: ReactNode
 }): JSX.Element {
   const { updateSettings } = useStore()
   const hasVideo = info.videoFormats.length > 0
@@ -284,14 +291,20 @@ export function FormatPicker({
     ? selectedHeight
     : (qualityHeights[0] ?? 0)
 
-  // One best row per achievable container, cheapest first — this is the
-  // "give me the top quality, let me pick the smallest file" view.
-  const bestRows = useMemo(() => {
-    const rows = CONTAINERS.map((c) => bestRowFor(c, info, selectedGroups, activeHeight)).filter(
-      (r): r is BestRow => !!r
-    )
-    return rows
-  }, [info, selectedGroups, activeHeight])
+  // One best row per achievable container, for every quality tier.
+  const rowsByHeight = useMemo(() => {
+    const map = new Map<number, BestRow[]>()
+    for (const height of qualityHeights) {
+      map.set(
+        height,
+        CONTAINERS.map((c) => bestRowFor(c, info, selectedGroups, height)).filter(
+          (r): r is BestRow => !!r
+        )
+      )
+    }
+    return map
+  }, [info, selectedGroups, qualityHeights])
+  const bestRows = rowsByHeight.get(activeHeight) ?? EMPTY_ROWS
 
   const recommendedBestKey = recommendedContainer(
     bestRows,
@@ -369,12 +382,17 @@ export function FormatPicker({
         (info.hasMultipleAudioLanguages && audioKindGroup
           ? ` · ${audioKindGroup.languageLabel}`
           : '')
+      const source = audioKindGroup?.formats[0]
       return {
         kind: 'audio',
-        audioFormatId: audioKindGroup?.formats[0]?.formatId,
+        audioFormatId: source?.formatId,
         audioLanguage: audioKindGroup?.language ?? null,
         audioOutputFormat: audioFmt,
         selectionLabel: label,
+        sizeLabel:
+          audioFmt === 'best' && source?.filesize
+            ? formatBytes(source.filesize, source.filesizeIsApprox)
+            : undefined,
         valid: hasAudio
       }
     }
@@ -395,7 +413,16 @@ export function FormatPicker({
       : ''
     const label = (selectedVideo?.qualityLabel ?? 'Best') + ` · ${container.toUpperCase()}` + langSuffix
 
+    let totalSize: number | null = selectedVideo?.filesize ?? null
+    let sizeIsApprox = selectedVideo?.filesizeIsApprox ?? false
+    for (const track of audioTracks) {
+      if (totalSize != null && track.filesize != null) totalSize += track.filesize
+      else sizeIsApprox = true
+      if (track.filesizeIsApprox) sizeIsApprox = true
+    }
+
     return {
+      sizeLabel: totalSize != null ? formatBytes(totalSize, sizeIsApprox) : undefined,
       kind: 'video',
       videoFormatId: selectedVideo?.formatId,
       audioFormatId: audioTracks[0]?.formatId,
@@ -435,7 +462,7 @@ export function FormatPicker({
       value: 'video' as const,
       label: (
         <span className="kind-tab">
-          <Icon name="video" size={16} /> Video
+          <Icon name="video" size={15} /> Video
         </span>
       )
     },
@@ -443,110 +470,106 @@ export function FormatPicker({
       value: 'audio' as const,
       label: (
         <span className="kind-tab">
-          <Icon name="audio" size={16} /> Audio
+          <Icon name="audio" size={15} /> Audio
         </span>
       )
     }
   ]
 
+  // Small print next to a tier name: the exact rendition when the tier hides
+  // it (4K → 2160p60), otherwise just a high frame rate.
+  const tierDetail = (height: number, video: VideoFormat): string => {
+    const fps = video.fps && video.fps >= 50 ? Math.round(video.fps) : null
+    if (height >= 2160) return `${height}p${fps ?? ''}`
+    return fps ? `${fps} fps` : ''
+  }
+
   return (
-    <div className="picker fade-up">
-      <div className="picker-head">
-        <Segmented options={kindOptions} value={kind} onChange={setKind} />
-        {kind === 'video' && hasVideo && (
-          <label className="best-toggle" title="One row per format — highest quality only">
-            <span>Best quality</span>
-            <Toggle checked={bestMode} onChange={toggleBestMode} label="Best quality" />
-          </label>
-        )}
-      </div>
-
-      {kind === 'video' ? (
-        <div className="video-panel">
-          {info.hasMultipleAudioLanguages && (
-            <div className="lang-chips-row">
-              <div className="control-label">Audio tracks</div>
-              <div className="sub-lang-chips">
-                {rankedGroups.map((g) => renderLangPill(g))}
-                {hiddenGroups.length > 0 && (
-                  <button
-                    className="chip chip-sm chip-more"
-                    aria-expanded={moreLangsOpen}
-                    onClick={() => {
-                      if (moreLangsOpen) saveFavoriteLanguages()
-                      setMoreLangsOpen((v) => !v)
-                    }}
-                  >
-                    {moreLangsOpen ? 'Hide ▴' : `More (${hiddenGroups.length}) ▾`}
-                  </button>
-                )}
-              </div>
-              {hiddenGroups.length > 0 && (
-                <div className={`lang-more ${moreLangsOpen ? 'open' : ''}`}>
-                  <div className="sub-lang-chips">
-                    {hiddenGroups.map((g) => renderLangPill(g))}
-                  </div>
-                </div>
-              )}
-              {selectedGroups.length >= 2 && (
-                <span className="lang-chips-note">
-                  <Icon name="sparkle" size={13} /> All selected languages are embedded as
-                  switchable audio tracks.
-                </span>
-              )}
-            </div>
+    <div className="picker">
+      <div className="picker-main">
+        <div className="picker-head">
+          <Segmented size="sm" options={kindOptions} value={kind} onChange={setKind} />
+          {kind === 'video' && hasVideo && (
+            <button
+              className="btn-mini ghost picker-mode"
+              title={
+                bestMode
+                  ? 'Show every stream with codec and source details'
+                  : 'Back to the simple quality table'
+              }
+              onClick={() => toggleBestMode(!bestMode)}
+            >
+              {bestMode ? 'All formats' : 'Simple table'}
+            </button>
           )}
+        </div>
 
-          {bestMode ? (
+        {kind === 'video' ? (
+          bestMode ? (
             bestRows.length > 0 ? (
-              <div className="quality-option-stack" role="radiogroup" aria-label="Quality and file type">
+              <div className="qtable" role="grid" aria-label="Quality and file type">
+                <div className="qt-head" role="row">
+                  <span>Quality</span>
+                  {CONTAINERS.map((c) => (
+                    <span key={c}>{c.toUpperCase()}</span>
+                  ))}
+                </div>
                 {qualityHeights.map((height) => {
-                  const rows = CONTAINERS.map((candidate) =>
-                    bestRowFor(candidate, info, selectedGroups, height)
-                  ).filter((row): row is BestRow => !!row)
+                  const rows = rowsByHeight.get(height) ?? EMPTY_ROWS
+                  if (rows.length === 0) return null
+                  const active = height === activeHeight
+                  const shown = rows.find((row) => row.container === container) ?? rows[0]
                   const recommended = recommendedContainer(
                     rows,
                     selectedGroups.length >= 2,
                     settings.preferredVideoContainer
                   )
                   const smallest = meaningfullySmallestContainer(rows)
-                  const qualityActive = height === activeHeight
+                  const detail = tierDetail(height, shown.video)
+                  const hdr = shown.video.dynamicRange && shown.video.dynamicRange !== 'SDR'
                   return (
-                    <section
-                      key={height}
-                      className={`quality-option-card ${qualityActive ? 'selected' : ''}`}
-                    >
-                      <div className="quality-option-head">
+                    <div key={height} className={`qt-row ${active ? 'on' : ''}`} role="row">
+                      <span className="qt-name" title={exactResolution(shown.video)}>
                         <strong>{qualityTierLabel(height)}</strong>
-                        <span>{rows[0]?.video.qualityLabel}</span>
-                      </div>
-                      <div className="quality-container-grid">
-                        {rows.map((row) => {
-                          const active = qualityActive && row.container === container
+                        {detail && <em>{detail}</em>}
+                        {hdr && <span className="tag tag-hdr">{shown.video.dynamicRange}</span>}
+                      </span>
+                      {CONTAINERS.map((c) => {
+                        const row = rows.find((r) => r.container === c)
+                        if (!row) {
                           return (
-                            <button
-                              key={row.container}
-                              role="radio"
-                              aria-checked={active}
-                              className={`quality-container ${active ? 'selected' : ''}`}
-                              title={exactResolution(row.video)}
-                              onClick={() => {
-                                setSelectedHeight(height)
-                                selectBestRow(row)
-                              }}
-                            >
-                              <strong>{row.container.toUpperCase()}</strong>
-                              <span>{formatBytes(row.totalSize, row.sizeIsApprox)}</span>
-                              {row.container === recommended ? (
-                                <small>{selectedGroups.length >= 2 ? 'Recommended' : 'Most compatible'}</small>
-                              ) : row.container === smallest ? (
-                                <small>Smallest</small>
-                              ) : null}
-                            </button>
+                            <span key={c} className="qt-cell empty" aria-hidden="true">
+                              —
+                            </span>
                           )
-                        })}
-                      </div>
-                    </section>
+                        }
+                        const selected = active && c === container
+                        return (
+                          <button
+                            key={c}
+                            role="gridcell"
+                            aria-selected={selected}
+                            className={`qt-cell ${selected ? 'on' : ''}`}
+                            title={
+                              c === recommended
+                                ? selectedGroups.length >= 2
+                                  ? 'Recommended for several audio tracks'
+                                  : 'Plays everywhere'
+                                : c === smallest
+                                  ? 'Smallest file'
+                                  : `${qualityTierLabel(height)} as ${c.toUpperCase()}`
+                            }
+                            onClick={() => {
+                              setSelectedHeight(height)
+                              selectBestRow(row)
+                            }}
+                          >
+                            <span className="qt-radio" />
+                            {formatBytes(row.totalSize, row.sizeIsApprox)}
+                          </button>
+                        )
+                      })}
+                    </div>
                   )
                 })}
               </div>
@@ -620,47 +643,83 @@ export function FormatPicker({
                 </div>
               )}
             </>
-          )}
-        </div>
-      ) : (
-        <div className="audio-panel">
-          {info.hasMultipleAudioLanguages && audioKindGroup && (
-            <label className="lang-select">
-              <span>Audio language</span>
-              <div className="select-wrap">
-                <select value={audioLangKey} onChange={(e) => setAudioLangKey(e.target.value)}>
-                  {info.audioGroups.map((g) => (
-                    <option key={groupKey(g.language)} value={groupKey(g.language)}>
-                      {g.languageLabel}
-                      {g.isDefault ? ' (default)' : ''}
-                    </option>
-                  ))}
-                </select>
-                <Icon name="chevron" size={16} />
+            )
+        ) : (
+          <div className="audio-panel">
+            {info.hasMultipleAudioLanguages && audioKindGroup && (
+              <label className="lang-select">
+                <span>Language</span>
+                <div className="select-wrap">
+                  <select value={audioLangKey} onChange={(e) => setAudioLangKey(e.target.value)}>
+                    {info.audioGroups.map((g) => (
+                      <option key={groupKey(g.language)} value={groupKey(g.language)}>
+                        {g.languageLabel}
+                        {g.isDefault ? ' (default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <Icon name="chevron" size={16} />
+                </div>
+              </label>
+            )}
+            <div className="fmt-chips">
+              {AUDIO_FORMATS.map((f) => (
+                <button
+                  key={f.value}
+                  className={`chip chip-sm ${audioFmt === f.value ? 'active' : ''}`}
+                  title={f.hint}
+                  onClick={() => setAudioFmt(f.value)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <div className="audio-quality-note">
+              <Icon name="sparkle" size={14} />
+              {audioKindGroup?.formats[0]?.qualityLabel
+                ? `Best available source: ${audioKindGroup.formats[0].qualityLabel}`
+                : 'Best available quality will be used.'}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <aside className="picker-side">
+        {kind === 'video' && info.hasMultipleAudioLanguages && (
+          <div className="lang-chips-row">
+            <div className="control-label">Audio tracks</div>
+            <div className="sub-lang-chips">
+              {rankedGroups.map((g) => renderLangPill(g))}
+              {hiddenGroups.length > 0 && (
+                <button
+                  className="chip chip-sm chip-more"
+                  aria-expanded={moreLangsOpen}
+                  onClick={() => {
+                    if (moreLangsOpen) saveFavoriteLanguages()
+                    setMoreLangsOpen((v) => !v)
+                  }}
+                >
+                  {moreLangsOpen ? 'Hide ▴' : `More (${hiddenGroups.length}) ▾`}
+                </button>
+              )}
+            </div>
+            {hiddenGroups.length > 0 && (
+              <div className={`lang-more ${moreLangsOpen ? 'open' : ''}`}>
+                <div className="sub-lang-chips">
+                  {hiddenGroups.map((g) => renderLangPill(g))}
+                </div>
               </div>
-            </label>
-          )}
-          <div className="control-label">Output format</div>
-          <div className="fmt-chips">
-            {AUDIO_FORMATS.map((f) => (
-              <button
-                key={f.value}
-                className={`chip ${audioFmt === f.value ? 'active' : ''}`}
-                onClick={() => setAudioFmt(f.value)}
-              >
-                <span className="chip-label">{f.label}</span>
-                <span className="chip-hint">{f.hint}</span>
-              </button>
-            ))}
+            )}
+            {selectedGroups.length >= 2 && (
+              <span className="lang-chips-note">
+                <Icon name="sparkle" size={13} /> All selected languages are embedded as
+                switchable audio tracks.
+              </span>
+            )}
           </div>
-          <div className="audio-quality-note">
-            <Icon name="sparkle" size={14} />
-            {audioKindGroup?.formats[0]?.qualityLabel
-              ? `Best available source: ${audioKindGroup.formats[0].qualityLabel}`
-              : 'Best available quality will be used.'}
-          </div>
-        </div>
-      )}
+        )}
+        {children}
+      </aside>
     </div>
   )
 }

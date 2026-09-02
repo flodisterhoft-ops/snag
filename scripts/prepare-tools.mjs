@@ -33,14 +33,14 @@ function loadManifest() {
   if (manifest.schemaVersion !== 1 || manifest.target !== 'win32-x64') {
     throw new Error('Tool manifest must use schemaVersion 1 and target win32-x64.')
   }
-  if (!Array.isArray(manifest.tools) || manifest.tools.length !== 2) {
-    throw new Error('Tool manifest must define exactly yt-dlp and ffmpeg.')
+  if (!Array.isArray(manifest.tools) || manifest.tools.length !== 3) {
+    throw new Error('Tool manifest must define exactly yt-dlp, ffmpeg, and aria2.')
   }
 
   const ids = new Set()
   const outputs = new Set()
   for (const tool of manifest.tools) {
-    if (!['yt-dlp', 'ffmpeg'].includes(tool.id) || ids.has(tool.id)) {
+    if (!['yt-dlp', 'ffmpeg', 'aria2'].includes(tool.id) || ids.has(tool.id)) {
       throw new Error(`Unexpected or duplicate tool id: ${tool.id}`)
     }
     ids.add(tool.id)
@@ -62,8 +62,8 @@ function loadManifest() {
     }
   }
 
-  if (!ids.has('yt-dlp') || !ids.has('ffmpeg')) {
-    throw new Error('Tool manifest must define yt-dlp and ffmpeg.')
+  if (!ids.has('yt-dlp') || !ids.has('ffmpeg') || !ids.has('aria2')) {
+    throw new Error('Tool manifest must define yt-dlp, ffmpeg, and aria2.')
   }
 
   if (!Array.isArray(manifest.supportFiles) || manifest.supportFiles.length === 0) {

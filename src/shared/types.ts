@@ -7,6 +7,12 @@ export const VIDEO_CONTAINERS = ['mp4', 'mkv', 'webm'] as const
 export type VideoContainer = (typeof VIDEO_CONTAINERS)[number]
 
 export const AUDIO_OUTPUT_FORMATS = ['mp3', 'm4a', 'opus', 'wav', 'flac', 'best'] as const
+
+// Which program fetches the bytes: yt-dlp's own downloader, or the bundled
+// aria2c (many connections per file; used for plain http(s) files and DASH
+// fragments, never for HLS).
+export const DOWNLOAD_ENGINES = ['native', 'aria2'] as const
+export type DownloadEngine = (typeof DOWNLOAD_ENGINES)[number]
 export type AudioOutputFormat = (typeof AUDIO_OUTPUT_FORMATS)[number]
 
 export interface VideoFormat {
@@ -119,6 +125,10 @@ export interface DownloadRequest {
   section?: DownloadSection
   // launch the finished file in its default app
   openWhenDone?: boolean
+  // hand the finished file to a share target when done (id from Settings;
+  // omitted = the first enabled one)
+  shareWhenDone?: boolean
+  shareTarget?: string
   // common
   saveDir: string
   subtitles?: SubtitleSelection
@@ -143,6 +153,8 @@ export interface DownloadJob {
   eta: string | null
   sizeLabel: string | null
   itemLabel: string | null
+  // What yt-dlp is doing after the transfer ("Merging video and audio").
+  phase?: string | null
   filepath: string | null
   errorMessage: string | null
   createdAt: number
@@ -157,6 +169,7 @@ export interface ProgressUpdate {
   eta: string | null
   sizeLabel: string | null
   itemLabel?: string | null
+  phase?: string | null
   filepath?: string | null
   errorMessage?: string | null
   // Batch downloads start with the URL as their title and learn the real one
@@ -264,7 +277,47 @@ export interface Settings {
   quickWindowSize: QuickWindowSize | null
   // Remembered "Open when done" choice.
   openWhenDone: boolean
+  // Apps offered by the Share buttons, and whether to ask which one each time.
+  shareTargets: ShareTarget[]
+  shareAsk: boolean
+  downloadEngine: DownloadEngine
+  player: Player
 }
+
+// Apps a finished file can be handed to. The Windows share panel and Telegram
+// are built in; custom entries point at any executable that takes a file path.
+export const SHARE_TARGET_KINDS = ['windows', 'telegram', 'custom'] as const
+export type ShareTargetKind = (typeof SHARE_TARGET_KINDS)[number]
+
+export interface ShareTarget {
+  id: string
+  kind: ShareTargetKind
+  label: string
+  // Executable for custom targets; null for the built-in ones.
+  path: string | null
+  enabled: boolean
+}
+
+export const DEFAULT_SHARE_TARGETS: ShareTarget[] = [
+  { id: 'telegram', kind: 'telegram', label: 'Telegram', path: null, enabled: true },
+  { id: 'windows', kind: 'windows', label: 'Windows share panel', path: null, enabled: true }
+]
+
+// What the Share and Play buttons need to know: which targets are actually
+// usable on this machine and which player opens files.
+export interface ShareInfo {
+  // `icon` is a PNG data URL for custom apps (their own file icon); the
+  // built-in targets draw their own symbols.
+  targets: (ShareTarget & { installed: boolean; icon: string | null })[]
+  ask: boolean
+  player: string
+  vlcFound: boolean
+}
+
+// Which program opens finished files: VLC when installed, or whatever
+// Windows associates with the file type.
+export const PLAYERS = ['vlc', 'system'] as const
+export type Player = (typeof PLAYERS)[number]
 
 export interface CookieStatus {
   source: CookieSource
@@ -364,6 +417,8 @@ export interface ToolStatus {
   ytdlpVersion: string | null
   ffmpegFound: boolean
   ffmpegPath: string | null
+  aria2cFound: boolean
+  aria2cPath: string | null
 }
 
 // Bridge exposed on window.api (implemented in preload).
@@ -419,7 +474,13 @@ export interface Api {
   relaunchOutsideSandbox: () => Promise<boolean>
   deleteJobFile: (jobId: string) => Promise<{ ok: boolean; error?: string }>
   deleteCompletedFiles: () => Promise<{ deletedIds: string[]; errors: string[] }>
-  shareFile: (jobId: string) => Promise<string>
+  shareFile: (jobId: string, targetId?: string) => Promise<string>
+  getShareInfo: () => Promise<ShareInfo>
+  // File dialog for a custom share app (shortcuts are resolved to their
+  // program); returns the executable path and a display name.
+  pickShareApp: () => Promise<{ path: string; label: string } | null>
+  // Opens the finished file in VLC when installed, else the default player.
+  playFile: (jobId: string) => Promise<string>
   // Updates
   checkForUpdates: () => Promise<UpdateAvailability>
   dismissUpdates: () => Promise<void>

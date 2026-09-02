@@ -21,7 +21,12 @@ describe('yt-dlp JavaScript runtime', () => {
   it('sets the Electron child to run as Node without mutating the source environment', () => {
     const source = { PATH: 'C:\\Windows' }
     const env = ytdlpChildEnv(source)
-    expect(env).toEqual({ PATH: 'C:\\Windows', ELECTRON_RUN_AS_NODE: '1' })
+    expect(env).toEqual({
+      PATH: 'C:\\Windows',
+      ELECTRON_RUN_AS_NODE: '1',
+      PYTHONIOENCODING: 'utf-8',
+      PYTHONUTF8: '1'
+    })
     expect(source).toEqual({ PATH: 'C:\\Windows' })
   })
 })

@@ -30,6 +30,21 @@ Bundled notices:
   ffmpeg-BUILD-README.txt
   SOURCE_COMPLIANCE.md
 
+aria2 1.37.0 (win-64bit-build1)
+--------------------------------
+Project: https://aria2.github.io/
+Source of this release: https://github.com/aria2/aria2/tree/release-1.37.0
+Binary release: https://github.com/aria2/aria2/releases/tag/release-1.37.0
+License: GNU General Public License version 2 or later, with the OpenSSL
+linking exception granted by the aria2 authors
+Bundled notices:
+  aria2-COPYING.txt
+
+Snag runs aria2c.exe as a separate process (yt-dlp's external downloader)
+only when the "aria2" download engine is selected in Settings. Whoever
+distributes the packaged aria2c executable must satisfy the GPL's license and
+Corresponding Source requirements for it as well; see SOURCE_COMPLIANCE.md.
+
 This is not an LGPL-only FFmpeg build. Its configuration enables GPL and
 version-3 components and statically links external libraries. Snag remains a
 separate MIT-licensed program, but anyone distributing the packaged FFmpeg

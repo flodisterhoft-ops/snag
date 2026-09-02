@@ -12,6 +12,7 @@ import type {
   DownloadJob,
   Settings,
   SettingsSection,
+  ShareInfo,
   StorageStatus,
   ToolStatus,
   ProgressUpdate,
@@ -61,6 +62,9 @@ interface Store {
   // Available updates (auto-check or manual), shown by the update banner.
   updates: UpdateAvailability | null
   setUpdates: (u: UpdateAvailability | null) => void
+  // Usable share apps and the player, for the Share and Play buttons.
+  shareInfo: ShareInfo | null
+  refreshShareInfo: () => Promise<void>
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -84,6 +88,7 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
   const [handoffs, setHandoffs] = useState<Handoff[]>([])
   const handoffSeq = useRef(0)
   const [updates, setUpdates] = useState<UpdateAvailability | null>(null)
+  const [shareInfo, setShareInfo] = useState<ShareInfo | null>(null)
   const jobsRef = useRef<DownloadJob[]>([])
   jobsRef.current = jobs
 
@@ -119,6 +124,15 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
     else console.error('Failed to check download tools:', toolsResult.reason)
 
     setReady(true)
+    void window.api.getShareInfo().then(setShareInfo).catch(() => {})
+  }, [])
+
+  const refreshShareInfo = useCallback(async (): Promise<void> => {
+    try {
+      setShareInfo(await window.api.getShareInfo())
+    } catch {
+      /* the buttons keep their last known targets */
+    }
   }, [])
 
   useEffect(() => {
@@ -185,6 +199,7 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
   const updateSettings = async (patch: Partial<Settings>): Promise<void> => {
     const next = await window.api.setSettings(patch)
     setSettings(next)
+    if ('shareTargets' in patch || 'shareAsk' in patch) void refreshShareInfo()
   }
 
   const refreshTools = async (): Promise<void> => {
@@ -250,7 +265,9 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
     handoff: handoffs[0] ?? null,
     clearHandoffUrl: () => setHandoffs((prev) => prev.slice(1)),
     updates,
-    setUpdates
+    setUpdates,
+    shareInfo,
+    refreshShareInfo
   }
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

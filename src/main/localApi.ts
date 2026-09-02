@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { createServer, IncomingMessage, Server, ServerResponse } from 'http'
-import { randomBytes, timingSafeEqual } from 'crypto'
-import { readFileSync, writeFileSync } from 'fs'
+import { randomBytes, timingSafeEqual, createHash } from 'crypto'
+import { readFileSync, writeFileSync, statSync } from 'fs'
 import { join } from 'path'
 import { analyzeCached, clearAnalysisCache } from './metadata'
 import { cookieArgs, cookieSyncWanted, saveBrowserCookies } from './cookies'
@@ -9,6 +9,7 @@ import { downloadManager } from './downloader'
 import { loadSettings, saveSettings } from './settings'
 import { isHttpUrl } from './protocol'
 import { openSettingsWindow } from './windows'
+import { shareTargetsWithIcons } from './share'
 import {
   allowedCorsOrigin,
   isSettingsSection,
@@ -156,14 +157,39 @@ function requestFromBody(raw: unknown): DownloadRequest | null {
     mergeContainer,
     audioLanguage: str(b.audioLanguage, 20) ?? null,
     audioOutputFormat,
+    openWhenDone: b.openWhenDone === true || undefined,
+    shareWhenDone: b.shareWhenDone === true || undefined,
+    shareTarget: b.shareWhenDone === true ? str(b.shareTarget, 64) : undefined,
     saveDir: loadSettings().defaultSaveDir,
     selectionLabel: str(b.selectionLabel, 120) || 'From browser'
   }
 }
 
+// Identity of the unpacked extension folder Chrome loads. It changes whenever
+// Snag refreshes that folder, so the extension can reload itself even when the
+// app version did not change (local builds, hotfixes).
+let extensionRevisionCache: { key: string; at: number } | null = null
+function extensionRevision(): string {
+  const now = Date.now()
+  if (extensionRevisionCache && now - extensionRevisionCache.at < 30000) return extensionRevisionCache.key
+  const dir = join(app.getPath('userData'), 'browser-extension')
+  const parts: string[] = []
+  for (const name of ['manifest.json', 'content.js', 'content.css', 'background.js']) {
+    try {
+      const st = statSync(join(dir, name))
+      parts.push(name + ':' + st.size + ':' + Math.round(st.mtimeMs))
+    } catch {
+      parts.push(name + ':missing')
+    }
+  }
+  const key = createHash('sha1').update(parts.join('|')).digest('hex').slice(0, 16)
+  extensionRevisionCache = { key, at: now }
+  return key
+}
+
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined
-  const reply = (status: number, payload: unknown): void => reply(status, payload)
+  const reply = (status: number, payload: unknown): void => sendJson(res, status, payload, origin)
   if (req.method === 'OPTIONS') {
     reply(204, null)
     return
@@ -199,6 +225,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     reply(200, {
       app: 'snag',
       version: app.getVersion(),
+      extensionRevision: extensionRevision(),
       // Asks the extension to send a fresh cookie export on this heartbeat.
       cookieSyncWanted: cookieSyncWanted(loadSettings())
     })
@@ -238,7 +265,12 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       multiAudioEnabled: s.multiAudio.enabled,
       bestQualityMode: s.bestQualityMode,
       preferredContainer: s.preferredVideoContainer,
-      preferredAudioFormat: s.preferredAudioFormat
+      preferredAudioFormat: s.preferredAudioFormat,
+      // Usable share apps for the panel's Share button, in the user's order.
+      shareTargets: (await shareTargetsWithIcons(s))
+        .filter((t) => t.enabled && t.installed)
+        .map((t) => ({ id: t.id, label: t.label, kind: t.kind, icon: t.icon })),
+      shareAsk: s.shareAsk
     })
     return
   }
@@ -300,6 +332,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
         speed: job.speed,
         eta: job.eta,
         sizeLabel: job.sizeLabel,
+        phase: job.phase ?? null,
         errorMessage: job.errorMessage
       }
     })

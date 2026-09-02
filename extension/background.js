@@ -221,12 +221,19 @@ async function reloadForNewAppVersion() {
     if (!res.ok) return
     const data = await res.json()
     if (!data || data.app !== 'snag' || typeof data.version !== 'string') return
-    const stored = await chrome.storage.local.get('snagObservedAppVersion')
+    const stored = await chrome.storage.local.get(['snagObservedAppVersion', 'snagObservedExtensionRevision'])
     const previous = stored.snagObservedAppVersion
-    await chrome.storage.local.set({ snagObservedAppVersion: data.version })
+    const previousRevision = stored.snagObservedExtensionRevision
+    const revision = typeof data.extensionRevision === 'string' ? data.extensionRevision : ''
+    await chrome.storage.local.set({ snagObservedAppVersion: data.version, snagObservedExtensionRevision: revision })
     await apiFetch(port, '/extension/heartbeat', { method: 'POST', body: '{}' }, 1200)
     if (data.cookieSyncWanted === true) await exportCookies(port)
-    if (typeof previous === 'string' && previous !== data.version) chrome.runtime.reload()
+    // A new app version or a refreshed extension folder (same version, newer
+    // files) both mean Chrome is still running stale code from this folder.
+    const versionChanged = typeof previous === 'string' && previous !== data.version
+    const revisionChanged =
+      typeof previousRevision === 'string' && previousRevision !== '' && revision !== '' && previousRevision !== revision
+    if (versionChanged || revisionChanged) chrome.runtime.reload()
   } catch {
     /* Snag may be starting or shutting down; the next alarm retries. */
   }
