@@ -102,6 +102,57 @@ describe('download queue persistence', () => {
     expect(existsSync(media)).toBe(false)
     expect(manager.getJob('delete-me')).toBeNull()
   })
+
+  it('drops finished downloads whose file was deleted outside Snag', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'snag-jobs-'))
+    tempDirs.push(dir)
+    const file = join(dir, 'jobs.json')
+    const kept = join(dir, 'kept.mp4')
+    writeFileSync(kept, 'video')
+
+    const onDisk = job('on-disk', 'completed')
+    onDisk.filepath = kept
+    const deleted = job('deleted', 'completed')
+    deleted.filepath = join(dir, 'gone.mp4')
+    const unplugged = job('unplugged', 'completed')
+    unplugged.filepath = join(dir, 'no-such-folder', 'clip.mp4')
+    const waiting = job('waiting', 'queued')
+    writeFileSync(file, JSON.stringify({ version: 1, jobs: [onDisk, deleted, unplugged, waiting] }))
+
+    const manager = new DownloadManager()
+    manager.initializePersistence(file, false)
+    const removedEvents: string[][] = []
+    manager.on('removed', (ids: string[]) => removedEvents.push(ids))
+
+    expect(manager.pruneMissingFiles()).toEqual(['deleted'])
+    expect(removedEvents).toEqual([['deleted']])
+    // The file still on disk stays; so does the one whose whole folder is
+    // unreachable (an unplugged drive must not wipe out that history).
+    expect(manager.getJobs().map((item) => item.id)).toEqual(['on-disk', 'unplugged', 'waiting'])
+
+    // Nothing left to drop, so no second event.
+    expect(manager.pruneMissingFiles()).toEqual([])
+    expect(removedEvents).toHaveLength(1)
+  })
+
+  it('follows a renamed file instead of dropping it, and refreshes its size', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'snag-jobs-'))
+    tempDirs.push(dir)
+    const file = join(dir, 'jobs.json')
+    writeFileSync(join(dir, 'Cats – Free Download.mp4'), 'x'.repeat(2 * 1024 * 1024))
+
+    const renamed = job('renamed', 'completed')
+    renamed.filepath = join(dir, 'Cats � Free Download.mp4')
+    renamed.sizeLabel = null
+    writeFileSync(file, JSON.stringify({ version: 1, jobs: [renamed] }))
+
+    const manager = new DownloadManager()
+    manager.initializePersistence(file, false)
+
+    expect(manager.pruneMissingFiles()).toEqual([])
+    expect(manager.getJob('renamed')?.filepath).toMatch(/Cats – Free Download\.mp4$/)
+    expect(manager.getJob('renamed')?.sizeLabel).toBe('2.0 MB')
+  })
 })
 
 describe('download output parsing', () => {
@@ -113,7 +164,8 @@ describe('download output parsing', () => {
     ).toBe('C:\\Downloads\\clip.mp4')
     expect(parseRemuxDestination('[download] Destination: C:\\Downloads\\clip.webm')).toBeNull()
   })
-})
+})
+
 
 describe('parseAria2Readout', () => {
   it('reads percent, speed, ETA, and total size from aria2c console lines', () => {
@@ -121,18 +173,19 @@ describe('parseAria2Readout', () => {
       progress: 20,
       speed: '97MiB/s',
       eta: '2s',
-      sizeLabel: '354MiB'
+      sizeLabel: '354 MB'
     })
     // Speed and ETA vanish near the end; the last readout in a chunk wins.
     expect(parseAria2Readout('[#a0872f 74MiB/354MiB(20%) CN:16] [#a0872f 284MiB/354MiB(80%) CN:16 DL:103MiB]')).toEqual({
       progress: 80,
       speed: '103MiB/s',
       eta: null,
-      sizeLabel: '354MiB'
+      sizeLabel: '354 MB'
     })
     expect(parseAria2Readout('[download] Destination: video.mp4')).toBeNull()
   })
-})
+})
+
 
 describe('findRenamedFile', () => {
   it('finds the real file when the console encoding lost an en dash or a full-width character', () => {

@@ -7,6 +7,7 @@ import {
   COOKIE_SOURCES,
   DOWNLOAD_KINDS,
   SPEED_LIMIT_UNITS,
+  SPEED_UNITS,
   SPONSORBLOCK_CATEGORIES,
   THEMES,
   VIDEO_CONTAINERS, DEFAULT_SHARE_TARGETS, SHARE_TARGET_KINDS, DOWNLOAD_ENGINES, PLAYERS } from '@shared/types'
@@ -23,6 +24,7 @@ function defaultSettings(): Settings {
   return {
     defaultSaveDir: downloads,
     speedLimit: { enabled: false, value: 5, unit: 'M' },
+    speedUnit: 'mb',
     concurrentFragments: 4,
     parallelDownloads: 1,
     filenameTemplate: '%(title)s',
@@ -153,6 +155,7 @@ export function sanitizeSettings(raw: unknown): Settings {
       value: clampNumber(speedLimit.value, 1, 9999, defaults.speedLimit.value),
       unit: pickEnum(speedLimit.unit, SPEED_LIMIT_UNITS, defaults.speedLimit.unit)
     },
+    speedUnit: pickEnum(raw.speedUnit, SPEED_UNITS, defaults.speedUnit),
     concurrentFragments: Math.round(
       clampNumber(raw.concurrentFragments, 1, 16, defaults.concurrentFragments)
     ),

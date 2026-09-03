@@ -18,7 +18,13 @@ import type {
   ProgressUpdate,
   UpdateAvailability
 } from '@shared/types'
-import { applyProgressUpdate, removeFinishedJobs, removeJobById, reorderJobs as reorderJobList } from './jobState'
+import {
+  applyProgressUpdate,
+  removeFinishedJobs,
+  removeJobById,
+  removeJobsByIds,
+  reorderJobs as reorderJobList
+} from './jobState'
 
 export type View = 'home' | 'queue' | 'settings'
 
@@ -150,6 +156,18 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
       if (mounted) setJobs((prev) => applyProgressUpdate(prev, u))
     })
 
+    const offRemoved = window.api.onJobsRemoved((ids: string[]) => {
+      if (mounted) setJobs((prev) => removeJobsByIds(prev, ids))
+    })
+
+    // Files are usually deleted in Explorer while Snag sits in the background,
+    // so the list is checked against the disk every time the window comes back.
+    const syncFiles = (): void => {
+      void window.api.syncJobFiles().catch(() => {})
+    }
+    window.addEventListener('focus', syncFiles)
+    syncFiles()
+
     // Register push listeners before telling main that this renderer is ready.
     // Keep a FIFO locally too, so rapid browser clicks are not collapsed into a
     // single React state update.
@@ -184,6 +202,8 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
       mounted = false
       offAdded()
       offProgress()
+      offRemoved()
+      window.removeEventListener('focus', syncFiles)
       offExternal()
       offOpenSettings()
       offUpdates()

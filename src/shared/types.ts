@@ -177,6 +177,12 @@ export interface ProgressUpdate {
   title?: string
 }
 
+// How a download's speed reads in the queue, the Chrome panel and the corner
+// toast. Megabytes by default: it is what a file manager counts in, and the
+// size next to it is measured the same way.
+export const SPEED_UNITS = ['mb', 'mbit', 'mib', 'both'] as const
+export type SpeedUnit = (typeof SPEED_UNITS)[number]
+
 export const SPEED_LIMIT_UNITS = ['K', 'M'] as const
 
 export interface SpeedLimit {
@@ -234,6 +240,8 @@ export interface QuickWindowSize {
 export interface Settings {
   defaultSaveDir: string
   speedLimit: SpeedLimit
+  // Unit the live download speed is shown in (see SPEED_UNITS).
+  speedUnit: SpeedUnit
   // Parallel connections per download (yt-dlp --concurrent-fragments), 1–16.
   concurrentFragments: number
   parallelDownloads: number
@@ -428,6 +436,8 @@ export interface Api {
   cancel: (jobId: string) => Promise<void>
   retry: (jobId: string) => Promise<DownloadJob | null>
   clearCompleted: () => Promise<void>
+  // Drops finished jobs whose file is no longer on disk; returns their ids.
+  syncJobFiles: () => Promise<string[]>
   removeJob: (jobId: string) => Promise<void>
   getJobs: () => Promise<DownloadJob[]>
   getSettings: () => Promise<Settings>
@@ -445,6 +455,7 @@ export interface Api {
   reorderJobs: (jobIds: string[]) => Promise<void>
   onProgress: (cb: (u: ProgressUpdate) => void) => () => void
   onJobAdded: (cb: (j: DownloadJob) => void) => () => void
+  onJobsRemoved: (cb: (ids: string[]) => void) => () => void
   // A link copied anywhere while Snag is open (clipboard watch setting).
   onClipboardUrl: (cb: (url: string) => void) => () => void
   // yt-dlp was updated in the background; refresh the engine status.

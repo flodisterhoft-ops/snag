@@ -127,7 +127,7 @@ export function JobCard({ job }: { job: DownloadJob }): JSX.Element {
           {status === 'downloading' && (
             <>
               <span className="job-pct">{pct}%</span>
-              {job.speed && <span>{formatDownloadSpeed(job.speed)}</span>}
+              {job.speed && <span>{formatDownloadSpeed(job.speed, settings?.speedUnit)}</span>}
               {job.eta && <span>ETA {job.eta}</span>}
               {job.sizeLabel && <span className="dim">{job.sizeLabel}</span>}
               {job.itemLabel && <span className="dim">{job.itemLabel}</span>}

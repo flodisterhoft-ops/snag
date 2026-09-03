@@ -1451,6 +1451,9 @@
     const status = el('span', null, 'Starting…')
     const pct = el('strong', 'num', '')
     row.append(status, pct)
+    // Snag reports the total size once the first bytes arrive, and the real
+    // size on disk when the file is finished.
+    let sizeText = ''
     const track = el('div', 'track')
     const fill = el('div', 'fill')
     track.appendChild(fill)
@@ -1489,7 +1492,7 @@
       if (state === 'done') {
         status.textContent = 'Saved to your folder'
         pct.textContent = '✓'
-        speed.textContent = meta.label || ''
+        speed.textContent = sizeText || meta.label || ''
         eta.textContent = ''
         entry.timer = setTimeout(remove, 4200)
       } else {
@@ -1505,6 +1508,7 @@
       const res = await sendMessage({ type: 'snag:job', jobId })
       if (!toasts.has(jobId) || entry.settled) return
       const job = res.ok && res.data && res.data.job
+      if (job && job.sizeLabel) sizeText = job.sizeLabel
       if (!job) {
         settle('err', res.error === 'not-running' ? 'Snag closed — check its queue.' : (res.data && res.data.error) || 'Lost track of this download.')
         return
@@ -1525,7 +1529,12 @@
               : 'Downloading'
       pct.textContent = Math.round(percent) + '%'
       fill.style.width = percent + '%'
-      speed.textContent = job.speed || job.sizeLabel || meta.label || ''
+      // While bytes are moving the total rides on the status line, which
+      // leaves the speed a line of its own; the longer post-processing phases
+      // keep that line to themselves and show the size below instead.
+      const moving = job.status === 'downloading'
+      if (sizeText && moving) status.textContent += ' · ' + sizeText
+      speed.textContent = job.speed || (moving ? '' : sizeText) || meta.label || ''
       eta.textContent = job.eta ? 'ETA ' + job.eta : ''
       entry.timer = setTimeout(poll, 600)
     }

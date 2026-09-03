@@ -33,6 +33,13 @@ export function removeJobById(jobs: DownloadJob[], id: string): DownloadJob[] {
   return jobs.filter((job) => job.id !== id)
 }
 
+// Main drops finished jobs whose file is gone from disk and sends their ids.
+export function removeJobsByIds(jobs: DownloadJob[], ids: string[]): DownloadJob[] {
+  if (ids.length === 0) return jobs
+  const gone = new Set(ids)
+  return jobs.filter((job) => !gone.has(job.id))
+}
+
 // Put the jobs in the order the user dragged them into (top to bottom).
 export function reorderJobs(jobs: DownloadJob[], ids: string[]): DownloadJob[] {
   const byId = new Map(jobs.map((job) => [job.id, job]))

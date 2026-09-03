@@ -19,6 +19,7 @@ const api: Api = {
   resumeJob: (jobId: string) => ipcRenderer.invoke('resumeJob', jobId),
   reorderJobs: (jobIds: string[]) => ipcRenderer.invoke('reorderJobs', jobIds),
   clearCompleted: () => ipcRenderer.invoke('clearCompleted'),
+  syncJobFiles: () => ipcRenderer.invoke('syncJobFiles'),
   removeJob: (jobId: string) => ipcRenderer.invoke('removeJob', jobId),
   getJobs: () => ipcRenderer.invoke('getJobs'),
   getSettings: () => ipcRenderer.invoke('getSettings'),
@@ -39,6 +40,11 @@ const api: Api = {
     const listener = (_e: IpcRendererEvent, j: DownloadJob): void => cb(j)
     ipcRenderer.on('jobAdded', listener)
     return () => ipcRenderer.removeListener('jobAdded', listener)
+  },
+  onJobsRemoved: (cb: (ids: string[]) => void) => {
+    const listener = (_e: IpcRendererEvent, ids: string[]): void => cb(ids)
+    ipcRenderer.on('jobsRemoved', listener)
+    return () => ipcRenderer.removeListener('jobsRemoved', listener)
   },
   onClipboardUrl: (cb: (url: string) => void) => {
     const listener = (_e: IpcRendererEvent, url: string): void => cb(url)

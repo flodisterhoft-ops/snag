@@ -10,6 +10,7 @@ import { sanitizeSettings } from '../src/main/settings'
 const valid: Settings = {
   defaultSaveDir: 'D:\\Media',
   speedLimit: { enabled: true, value: 750, unit: 'K' },
+  speedUnit: 'mib',
   concurrentFragments: 8,
   parallelDownloads: 3,
   filenameTemplate: '%(title)s [%(id)s]',
@@ -99,6 +100,11 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ ...valid, preferredAudioFormat: 'ogg' }).preferredAudioFormat).toBe('mp3')
     expect(sanitizeSettings({ ...valid, lastKind: 'playlist' }).lastKind).toBe('video')
     expect(sanitizeSettings({ ...valid, browserHandoff: 'popup' }).browserHandoff).toBe('quick')
+  })
+
+  it('falls back to megabytes when the speed unit is not one Snag offers', () => {
+    expect(sanitizeSettings({ ...valid, speedUnit: 'furlongs' }).speedUnit).toBe('mb')
+    expect(sanitizeSettings({ ...valid, speedUnit: 'mbit' }).speedUnit).toBe('mbit')
   })
 
   it('validates nested speedLimit per field so a bad unit cannot poison --limit-rate', () => {

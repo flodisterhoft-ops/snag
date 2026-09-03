@@ -124,6 +124,9 @@ if (!gotLock) {
     }
 
     downloadManager.initializePersistence()
+    // Anything deleted from the downloads folder while Snag was closed is not
+    // part of the list any more.
+    downloadManager.pruneMissingFiles()
     nativeTheme.themeSource = loadSettings().theme
     registerIpc()
     createTray(() => ensureMainWindow())

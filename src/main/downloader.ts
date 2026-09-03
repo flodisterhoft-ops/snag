@@ -15,25 +15,31 @@ import { app } from 'electron'
 import { loadSettings } from './settings'
 import { locateYtdlp, ffmpegDir, locateAria2c, cleanYtdlpError, ytdlpChildEnv } from './ytdlp'
 import { buildDownloadArgs, PROGRESS_PREFIX } from './args'
+import { cookieArgs } from './cookies'
+import { notifyComplete, notifyError } from './notify'
+import { shareFile } from './share'
+import { openWithPlayer } from './player'
+import type { DownloadJob, DownloadRequest, ProgressUpdate } from '@shared/types'
+import { formatBytes, parseByteString } from '@shared/format'
 
 // Size of the finished file for the queue card ("128 MB"); the progress lines
 // only ever report one stream at a time, so they undercount merged videos.
 function fileSizeLabel(path: string | null): string | null {
   if (!path) return null
   try {
-    const bytes = statSync(path).size
-    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+    return formatBytes(statSync(path).size)
   } catch {
     return null
   }
 }
-import { cookieArgs } from './cookies'
-import { notifyComplete, notifyError } from './notify'
-import { shareFile } from './share'
-import { openWithPlayer } from './player'
-import type { DownloadJob, DownloadRequest, ProgressUpdate } from '@shared/types'
+
+// The engines print their own units ("354.21MiB"). One shared formatter keeps
+// a size in the queue reading like the one the format picker showed.
+function normalizeSize(label: string | null): string | null {
+  if (!label) return null
+  const bytes = parseByteString(label)
+  return bytes == null ? label : formatBytes(bytes)
+}
 
 let counter = 0
 function genId(): string {
@@ -126,7 +132,7 @@ export function parseAria2Readout(
     progress: Math.max(0, Math.min(100, Number(last[5]))),
     speed: last[6] ? `${last[6]}/s` : null,
     eta: last[7] ?? null,
-    sizeLabel: `${last[3]}${last[4]}`
+    sizeLabel: normalizeSize(`${last[3]}${last[4]}`)
   }
 }
 
@@ -199,8 +205,36 @@ export class DownloadManager extends EventEmitter {
     for (const job of this.jobs.values()) {
       if (job.status !== 'completed' || !job.filepath || existsSync(job.filepath)) continue
       const healed = findRenamedFile(job.filepath)
-      if (healed) job.filepath = healed
+      if (healed) {
+        job.filepath = healed
+        job.sizeLabel = fileSizeLabel(healed) ?? job.sizeLabel
+      }
     }
+  }
+
+  // A finished download whose file was deleted or moved outside Snag has
+  // nothing left to open, play or share, so its card leaves the list exactly
+  // as it would had Snag deleted the file itself. Two things are never
+  // dropped: a file that was only renamed (healed above), and a job whose
+  // folder Snag cannot see at all — an unplugged drive or an offline network
+  // share would otherwise wipe out that whole part of the history.
+  pruneMissingFiles(): string[] {
+    this.healFilePaths()
+    const removed: string[] = []
+    for (const id of [...this.order]) {
+      const job = this.jobs.get(id)
+      if (!job || job.status !== 'completed' || !job.filepath) continue
+      if (existsSync(job.filepath) || !existsSync(dirname(job.filepath))) continue
+      this.jobs.delete(id)
+      this.order = this.order.filter((o) => o !== id)
+      this.destinations.delete(id)
+      removed.push(id)
+    }
+    if (removed.length > 0) {
+      this.emit('removed', removed)
+      this.schedulePersistence()
+    }
+    return removed
   }
 
   enqueue(request: DownloadRequest): DownloadJob {
@@ -629,7 +663,7 @@ export class DownloadManager extends EventEmitter {
       phase: null,
       speed: cleanField(parts[1]),
       eta: cleanField(parts[2]),
-      sizeLabel: cleanField(parts[3]),
+      sizeLabel: normalizeSize(cleanField(parts[3])),
       itemLabel: buildItemLabel(parts[4], parts[5])
     }
     if (progress != null) patch.progress = progress

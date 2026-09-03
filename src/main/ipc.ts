@@ -88,6 +88,7 @@ export function registerIpc(): void {
   downloadManager.on('progress', (u: ProgressUpdate) => broadcast('progress', u))
   downloadManager.on('added', (j: DownloadJob) => broadcast('jobAdded', j))
   downloadManager.on('reordered', (jobs: DownloadJob[]) => broadcast('jobsReordered', jobs))
+  downloadManager.on('removed', (ids: string[]) => broadcast('jobsRemoved', ids))
 
   handleTrusted('analyze', async (_e, url: string): Promise<AnalyzeResult> => {
     try {
@@ -132,6 +133,11 @@ export function registerIpc(): void {
   handleTrusted('clearCompleted', async (): Promise<void> => {
     downloadManager.clearCompleted()
   })
+
+  // The queue is a list of files, so files deleted in Explorer while Snag was
+  // in the background should not still be sitting in it. The renderer asks for
+  // this whenever the window comes forward.
+  handleTrusted('syncJobFiles', async (): Promise<string[]> => downloadManager.pruneMissingFiles())
 
   handleTrusted('deleteJobFile', async (_e, jobId: string) => {
     const job = downloadManager.getJob(jobId)

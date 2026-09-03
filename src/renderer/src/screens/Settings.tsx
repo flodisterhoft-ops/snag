@@ -13,6 +13,7 @@ import type {
   ShareTarget,
   DownloadEngine,
   Player,
+  SpeedUnit,
   Theme
 } from '@shared/types'
 import { SPONSORBLOCK_CATEGORIES } from '@shared/types'
@@ -554,6 +555,22 @@ export function SettingsScreen(): JSX.Element {
                 onChange={(v) => set({ concurrentFragments: Number(v) })}
               />
             </div>
+          </Row>
+          <Row
+            title="Speed is shown in"
+            desc="How a running download's speed reads in the queue and in the Chrome panel. Megabytes is what a file manager counts in; megabits is what an internet plan is sold in (the same speed, eight times the number)."
+          >
+            <Segmented
+              size="sm"
+              options={[
+                { value: 'mb', label: 'MB/s', recommended: true, hint: 'Megabytes per second — 12.4 MB/s' },
+                { value: 'mbit', label: 'Mbps', hint: 'Megabits per second, like your internet plan — 99.4 Mbps' },
+                { value: 'mib', label: 'MiB/s', hint: "Mebibytes per second, yt-dlp's own units — 11.8 MiB/s" },
+                { value: 'both', label: 'Both', hint: '12.4 MB/s · 99.4 Mbps' }
+              ]}
+              value={form.speedUnit}
+              onChange={(v) => set({ speedUnit: v as SpeedUnit })}
+            />
           </Row>
           <Row title="Speed limit" desc="Cap total bandwidth so downloads don't hog your connection">
             <div className="speed-control">

@@ -8,6 +8,7 @@ import { cookieArgs, cookieSyncWanted, saveBrowserCookies } from './cookies'
 import { downloadManager } from './downloader'
 import { loadSettings, saveSettings } from './settings'
 import { isHttpUrl } from './protocol'
+import { formatSpeed } from '@shared/format'
 import { openSettingsWindow } from './windows'
 import { shareTargetsWithIcons } from './share'
 import {
@@ -329,7 +330,9 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
         id: job.id,
         status: job.status,
         progress: job.progress,
-        speed: job.speed,
+        // Formatted here so the corner toast reads in the unit the user picked
+        // in Settings without the extension knowing anything about units.
+        speed: formatSpeed(job.speed, loadSettings().speedUnit),
         eta: job.eta,
         sizeLabel: job.sizeLabel,
         phase: job.phase ?? null,

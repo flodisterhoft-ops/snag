@@ -3,6 +3,13 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.8.10 — 2026-09-02
+
+- Files you delete or move out of your downloads folder no longer sit in Snag's list pretending to be there. Snag checks the list against the disk when it starts and every time its window comes forward, and drops the finished downloads whose file is gone — the same thing that already happened when Snag deleted the file for you. A file that was only renamed is followed instead of dropped, and a folder Snag cannot reach at all (an unplugged drive, an offline network share) keeps its downloads in the list.
+- Settings → Speed has a new "Speed is shown in" choice: MB/s (megabytes, the new default), Mbps (megabits, the number your internet plan is sold in), MiB/s (yt-dlp's own units) or both at once. It applies to the queue, the Chrome panel and the corner progress card, which used to be stuck showing MiB/s.
+- The Chrome download card shows the size of the video next to "Downloading", and the finished size when it is saved.
+- Sizes in the queue are written the same way everywhere ("354 MB") instead of repeating whichever unit yt-dlp or aria2 happened to print.
+
 ## 1.8.9 — 2026-09-02
 
 - Fix: a Store app added under "Share with" (Blip, for example) showed a generic icon and could fail to start, because Windows blocks icon extraction and direct launches inside its WindowsApps folder. Snag now reads the app's own logo from its package and starts it through its execution alias.

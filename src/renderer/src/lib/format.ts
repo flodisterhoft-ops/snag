@@ -1,15 +1,7 @@
-export function formatBytes(bytes: number | null | undefined, approx = false): string {
-  if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return '—'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let n = bytes
-  let i = 0
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024
-    i++
-  }
-  const val = n >= 100 || i === 0 ? Math.round(n) : i >= 3 ? n.toFixed(2) : n.toFixed(1)
-  return `${approx ? '~' : ''}${val} ${units[i]}`
-}
+import type { SpeedUnit } from '@shared/types'
+import { formatSpeed } from '@shared/format'
+
+export { formatBytes } from '@shared/format'
 
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return ''
@@ -21,31 +13,12 @@ export function formatDuration(seconds: number | null | undefined): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`
 }
 
-const SPEED_UNIT_BYTES: Record<string, number> = {
-  b: 1,
-  kb: 1_000,
-  kib: 1_024,
-  mb: 1_000_000,
-  mib: 1_048_576,
-  gb: 1_000_000_000,
-  gib: 1_073_741_824
-}
-
-export function formatDownloadSpeed(speed: string | null | undefined): string {
-  if (!speed) return ''
-  const match = speed.trim().match(/^([\d.]+)\s*(B|K(?:i)?B|M(?:i)?B|G(?:i)?B)\/s$/i)
-  if (!match) return speed
-
-  const value = Number.parseFloat(match[1])
-  const multiplier = SPEED_UNIT_BYTES[match[2].toLowerCase()]
-  if (!Number.isFinite(value) || !multiplier) return speed
-
-  const bytesPerSecond = value * multiplier
-  const megabytes = bytesPerSecond / 1_000_000
-  const megabits = (bytesPerSecond * 8) / 1_000_000
-  const mbLabel = megabytes >= 100 ? megabytes.toFixed(0) : megabytes.toFixed(1)
-  const mbitLabel = megabits >= 100 ? megabits.toFixed(0) : megabits.toFixed(1)
-  return `${mbLabel} MB/s · ${mbitLabel} Mbps`
+// The unit comes from Settings; unparseable engine output is shown as-is.
+export function formatDownloadSpeed(
+  speed: string | null | undefined,
+  unit: SpeedUnit = 'mb'
+): string {
+  return formatSpeed(speed, unit)
 }
 
 // A short, safe display path (keeps the last two segments).
