@@ -593,6 +593,19 @@
       renderMessage([strong, line, open])
     }
 
+    // Reloading an unpacked extension replaces its service worker immediately,
+    // but Chrome leaves content scripts in already-open pages attached to the
+    // retired extension context. Those scripts cannot message the new worker,
+    // so this is a page-refresh problem rather than a stopped desktop app.
+    function renderPageReloadRequired() {
+      const strong = el('strong', null, 'Snag was updated')
+      const line = el('span', null, 'Reload this page once to reconnect it to Snag.')
+      const reload = el('button', 'btn2 accent2', 'Reload page')
+      reload.type = 'button'
+      reload.addEventListener('click', () => location.reload())
+      renderMessage([strong, line, reload])
+    }
+
     // Start the app through its snag://open link. The browser only allows a
     // protocol launch on a fresh user gesture, so this fires straight from
     // the click that opened the panel; while Snag boots the panel waits, then
@@ -619,6 +632,11 @@
         if (!panel || panel.host !== host) return
         const res = await sendMessage({ type: 'snag:ping' })
         if (!panel || panel.host !== host) return
+        if (res && res.error === 'extension') {
+          state.wakeTimer = null
+          renderPageReloadRequired()
+          return
+        }
         if (res && res.running) {
           state.wakeTimer = null
           void loadAndRender()
@@ -995,6 +1013,8 @@
             head.querySelector('.thumb') || head.querySelector('.dot')
           )
           closePanel()
+        } else if (res.error === 'extension') {
+          renderPageReloadRequired()
         } else if (res.error === 'not-running') {
           goLabel.textContent = 'Download'
           updateGo()
@@ -1017,6 +1037,10 @@
       renderLoading('Reading video…')
       const ping = await sendMessage({ type: 'snag:ping' })
       if (!panel || panel.host !== host) return
+      if (ping && ping.error === 'extension') {
+        renderPageReloadRequired()
+        return
+      }
       if (!ping || !ping.running) {
         launchSnag()
         return
@@ -1031,7 +1055,11 @@
         requestAnalysis(pageUrl)
       ])
       if (!panel || panel.host !== host) return
-      if (analyzeRes.error === 'not-running' || analyzeRes.error === 'extension') {
+      if (analyzeRes.error === 'extension') {
+        renderPageReloadRequired()
+        return
+      }
+      if (analyzeRes.error === 'not-running') {
         launchSnag()
         return
       }

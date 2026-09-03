@@ -3,6 +3,10 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.8.11 — 2026-09-03
+
+- Fix: a YouTube or other video page left open while Snag refreshed its Chrome extension no longer waits 40 seconds and incorrectly says the desktop app failed to start. The panel now explains that Snag was updated and offers a **Reload page** button; newly opened or refreshed pages continue connecting automatically.
+
 ## 1.8.10 — 2026-09-02
 
 - Files you delete or move out of your downloads folder no longer sit in Snag's list pretending to be there. Snag checks the list against the disk when it starts and every time its window comes forward, and drops the finished downloads whose file is gone — the same thing that already happened when Snag deleted the file for you. A file that was only renamed is followed instead of dropped, and a folder Snag cannot reach at all (an unplugged drive, an offline network share) keeps its downloads in the list.
