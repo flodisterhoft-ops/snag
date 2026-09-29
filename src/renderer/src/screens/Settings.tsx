@@ -547,7 +547,7 @@ export function SettingsScreen(): JSX.Element {
                 size="sm"
                 options={[
                   { value: '1', label: 'Normal', hint: '1 connection' },
-                  { value: '4', label: 'Fast', hint: '4 connections' },
+                  { value: '4', label: 'Fast', recommended: true, hint: '4 connections, enough to fill a gigabit line' },
                   { value: '8', label: 'Turbo', hint: '8 connections' },
                   { value: '16', label: 'Max', hint: '16 connections, for very fast lines' }
                 ]}
@@ -652,12 +652,17 @@ export function SettingsScreen(): JSX.Element {
           <Section title="Formats">
             <Row
               title="Preferred video container"
-              desc="MP4 plays everywhere (phones, TVs, editors). MKV holds any codec and several audio tracks, so dubs need it. WebM is the open format for VP9 and AV1."
+              desc="MP4 with H.264 plays everywhere (phones, TVs, editors); Snag picks H.264 whenever the site has it, but YouTube's 1440p and 4K only come as AV1. MKV holds any codec and several audio tracks, so dubs need it. WebM is the open format for VP9 and AV1."
             >
               <Segmented
                 size="sm"
                 options={[
-                  { value: 'mp4', label: 'MP4', recommended: true, hint: 'Plays everywhere. Best default.' },
+                  {
+                    value: 'mp4',
+                    label: 'MP4',
+                    recommended: true,
+                    hint: 'Best default. Snag picks H.264 whenever the site has it, which plays everywhere; YouTube above 1080p only has AV1 (recent devices, VLC).'
+                  },
                   { value: 'mkv', label: 'MKV', hint: 'Any codec, several audio tracks and subtitles in one file.' },
                   { value: 'webm', label: 'WebM', hint: 'Open format for VP9/AV1. Browsers and most players.' }
                 ]}
@@ -667,7 +672,7 @@ export function SettingsScreen(): JSX.Element {
             </Row>
             <Row
               title="Preferred audio format"
-              desc="MP3 plays everywhere. M4A sounds the same at smaller size. Opus is the smallest. WAV and FLAC are lossless and large. Original keeps the source track without re-encoding."
+              desc="MP3 plays everywhere. M4A sounds the same at smaller size. Opus is the smallest. WAV and FLAC are large and cannot add back quality the source never had. Original keeps the source track without re-encoding, the best quality a site offers."
             >
               <Segmented
                 size="sm"
@@ -675,8 +680,8 @@ export function SettingsScreen(): JSX.Element {
                   { value: 'mp3', label: 'MP3', recommended: true, hint: 'Plays everywhere.' },
                   { value: 'm4a', label: 'M4A', hint: 'AAC. Same quality as MP3 at a smaller size; Apple-friendly.' },
                   { value: 'opus', label: 'Opus', hint: 'Smallest files; modern players only.' },
-                  { value: 'wav', label: 'WAV', hint: 'Lossless, uncompressed, very large.' },
-                  { value: 'flac', label: 'FLAC', hint: 'Lossless, compressed, large.' },
+                  { value: 'wav', label: 'WAV', hint: 'Uncompressed and very large, for editors. It cannot add quality the source does not have.' },
+                  { value: 'flac', label: 'FLAC', hint: 'Lossless packing, large. It cannot add quality the source does not have.' },
                   { value: 'best', label: 'Original', hint: 'Keeps the source track as is, no re-encoding.' }
                 ]}
                 value={form.preferredAudioFormat}

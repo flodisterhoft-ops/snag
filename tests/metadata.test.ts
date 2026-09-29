@@ -17,6 +17,22 @@ describe('video format parsing', () => {
 
     expect(formats[0].qualityLabel).toBe('2160p60')
   })
+
+  it("keeps YouTube's sized stream over its size-less HLS copy of the same quality", () => {
+    const base = { ext: 'mp4', width: 1920, height: 1080, fps: 25, vcodec: 'avc1.640028', acodec: 'none' }
+    const formats = parseVideoFormats([
+      { ...base, format_id: '270', tbr: 4688 },
+      { ...base, format_id: '137', tbr: 3038, filesize: 80911999 },
+      { ...base, format_id: '399', vcodec: 'av01.0.08M.08', tbr: 1142, filesize: 30415996 }
+    ])
+    expect(formats.map((f) => f.formatId)).toEqual(['137', '399'])
+    // Without any size, the higher bitrate still wins as before.
+    const unsized = parseVideoFormats([
+      { ...base, format_id: 'hls-low', tbr: 2000 },
+      { ...base, format_id: 'hls-high', tbr: 5000 }
+    ])
+    expect(unsized.map((f) => f.formatId)).toEqual(['hls-high'])
+  })
 })
 
 describe('audio format parsing', () => {

@@ -39,9 +39,10 @@ A fast, beautiful video & audio downloader for Windows — powered by
 - **One click from Chrome.** An optional translucent button floats over supported HTML5
   players; click it and an instant quick dialog springs up in the top-right corner —
   kept warm in the tray so there's no "starting up" wait.
-- **Fast where the stream supports it.** Up to 16 concurrent DASH/HLS fragments, a
-  one-click *Maximum speed* preset (one active download and eight fragments), and live
-  speed in MB/s **and** Mbps. Progressive single-file downloads may not get faster.
+- **Fast where the stream supports it.** YouTube videos and DASH/HLS streams come down
+  in up to 16 parallel pieces (**Connection boost**; the default already fills a gigabit
+  line), an optional aria2 engine speeds up plain file links from servers that slow each
+  connection, and live speed reads in MB/s, Mbps, or both.
 - **Multi-language audio & subtitles.** Set your languages once and Snag embeds every
   one it finds (like YouTube's dubbed tracks) as switchable audio in a single file, or
   pick a single track per download; plus download or embed captions.

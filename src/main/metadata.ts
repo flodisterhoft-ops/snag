@@ -139,15 +139,20 @@ export function parseVideoFormats(formats: RawFormat[]): VideoFormat[] {
     }
   })
 
-  // Collapse near-duplicate rows: keep the best (highest bitrate / size) per
-  // (height, fps, ext, codec-family) so the table stays readable.
+  // Collapse near-duplicate rows per (height, fps, ext, codec-family) so the
+  // table stays readable: keep one whose size is known, then the highest
+  // bitrate. YouTube's HLS copies carry no size and a higher bitrate, and
+  // used to hide the regular stream (137 behind 270 at 1080p H.264).
   const best = new Map<string, VideoFormat>()
+  const sized = (f: VideoFormat): number => (f.filesize != null ? 1 : 0)
   for (const v of mapped) {
     // v.vcodec is already the friendly, distinct label (H.264/H.265/AV1/VP9); dynamic
     // range must stay in the key so HDR and SDR variants remain separate options.
     const key = `${v.height ?? 0}|${v.fps ?? 0}|${v.ext}|${v.vcodec}|${v.dynamicRange ?? ''}|${v.isProgressive}`
     const prev = best.get(key)
-    if (!prev || (v.tbr ?? 0) > (prev.tbr ?? 0)) best.set(key, v)
+    if (!prev || sized(v) > sized(prev) || (sized(v) === sized(prev) && (v.tbr ?? 0) > (prev.tbr ?? 0))) {
+      best.set(key, v)
+    }
   }
 
   return [...best.values()].sort((a, b) => {

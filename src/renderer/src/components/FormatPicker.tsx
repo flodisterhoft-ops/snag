@@ -36,8 +36,8 @@ const AUDIO_FORMATS: { value: AudioOutputFormat; label: string; hint: string }[]
   { value: 'mp3', label: 'MP3', hint: 'Plays everywhere' },
   { value: 'm4a', label: 'M4A', hint: 'AAC' },
   { value: 'opus', label: 'Opus', hint: 'Small files' },
-  { value: 'wav', label: 'WAV', hint: 'Lossless' },
-  { value: 'flac', label: 'FLAC', hint: 'Lossless' },
+  { value: 'wav', label: 'WAV', hint: 'Uncompressed and large; no better than the source' },
+  { value: 'flac', label: 'FLAC', hint: 'Lossless packing; no better than the source' },
   { value: 'best', label: 'Original', hint: 'No re-encode' }
 ]
 
@@ -133,8 +133,45 @@ interface BestRow {
   sizeIsApprox: boolean
 }
 
+// Among equal-quality streams for one container: MP4 is the plays-everywhere
+// choice, so it takes H.264 whenever the site has it (YouTube: up to 1080p;
+// its AV1 is smaller but many TVs, older Macs and editors cannot open it).
+// Every other container takes the smallest file.
+export function pickContainerVideo(container: VideoContainer, pool: VideoFormat[]): VideoFormat {
+  return [...pool].sort((a, b) => {
+    if (container === 'mp4') {
+      const h264 = Number(b.vcodec === 'H.264') - Number(a.vcodec === 'H.264')
+      if (h264 !== 0) return h264
+    }
+    const sizeA = a.filesize ?? Number.POSITIVE_INFINITY
+    const sizeB = b.filesize ?? Number.POSITIVE_INFINITY
+    if (sizeA !== sizeB) return sizeA - sizeB
+    return (b.tbr ?? 0) - (a.tbr ?? 0)
+  })[0]
+}
+
+// What a best-mode cell's tooltip says about its stream. Unknown codecs (X's
+// direct MP4s) are H.264 in practice.
+export function containerCellHint(
+  video: Pick<VideoFormat, 'vcodec'>,
+  role: 'recommended' | 'several-audio' | 'smallest' | null,
+  fallback: string
+): string {
+  const codec = video.vcodec
+  const everywhere = !codec || codec === 'H.264'
+  const suffix = codec ? ` · ${codec}` : ''
+  if (role === 'several-audio') return `Recommended for several audio tracks${suffix}`
+  if (role === 'recommended') {
+    return everywhere
+      ? `Plays everywhere${suffix}`
+      : `${codec}: plays on recent phones and PCs and in VLC; some TVs and editors cannot open it`
+  }
+  if (role === 'smallest') return `Smallest file${suffix}`
+  return `${fallback}${suffix}`
+}
+
 // The single row shown per container in best mode: highest resolution, then
-// highest fps, then the smallest file among those equals.
+// highest fps, then the stream pickContainerVideo prefers.
 function bestRowFor(
   container: VideoContainer,
   info: MediaInfo,
@@ -152,12 +189,7 @@ function bestRowFor(
   if (pool.length === 0) return null
   const maxFps = Math.max(...pool.map((f) => f.fps ?? 0))
   pool = pool.filter((f) => (f.fps ?? 0) === maxFps)
-  const video = [...pool].sort((a, b) => {
-    const sizeA = a.filesize ?? Number.POSITIVE_INFINITY
-    const sizeB = b.filesize ?? Number.POSITIVE_INFINITY
-    if (sizeA !== sizeB) return sizeA - sizeB
-    return (b.tbr ?? 0) - (a.tbr ?? 0)
-  })[0]
+  const video = pickContainerVideo(container, pool)
 
   const audioTracks = video.isProgressive
     ? []
@@ -309,7 +341,7 @@ export function FormatPicker({
   )
 
   // Entering best mode (or analyzing new media while it is on) preselects the
-  // smallest file that still has the highest quality.
+  // recommended container at the highest quality.
   useEffect(() => {
     if (kind !== 'video' || !bestMode) return
     if (bestRows.some((row) => row.container === container && row.video.formatId === videoId)) return
@@ -546,15 +578,17 @@ export function FormatPicker({
                             role="gridcell"
                             aria-selected={selected}
                             className={`qt-cell ${selected ? 'on' : ''}`}
-                            title={
+                            title={containerCellHint(
+                              row.video,
                               c === recommended
                                 ? selectedGroups.length >= 2
-                                  ? 'Recommended for several audio tracks'
-                                  : 'Plays everywhere'
+                                  ? 'several-audio'
+                                  : 'recommended'
                                 : c === smallest
-                                  ? 'Smallest file'
-                                  : `${qualityTierLabel(height)} as ${c.toUpperCase()}`
-                            }
+                                  ? 'smallest'
+                                  : null,
+                              `${qualityTierLabel(height)} as ${c.toUpperCase()}`
+                            )}
                             onClick={() => {
                               setSelectedHeight(height)
                               selectBestRow(row)

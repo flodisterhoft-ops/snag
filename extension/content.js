@@ -221,7 +221,11 @@
       if (!pool.length) continue
       const maxFps = Math.max(...pool.map((f) => f.fps || 0))
       pool = pool.filter((f) => (f.fps || 0) === maxFps)
-      pool.sort((a, b) => (a.filesize ?? Infinity) - (b.filesize ?? Infinity) || (b.tbr || 0) - (a.tbr || 0))
+      // MP4 is the plays-everywhere pick: H.264 whenever the site has it at this
+      // quality (YouTube: up to 1080p). Other containers take the smallest file.
+      const h264First = (a, b) =>
+        container === 'mp4' ? Number(b.vcodec === 'H.264') - Number(a.vcodec === 'H.264') : 0
+      pool.sort((a, b) => h264First(a, b) || (a.filesize ?? Infinity) - (b.filesize ?? Infinity) || (b.tbr || 0) - (a.tbr || 0))
       const video = pool[0]
 
       const tracks = video.isProgressive
@@ -485,9 +489,17 @@
     const LOGO = '<svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>'
     const STAR_ICON = '<svg class="star" viewBox="0 0 24 24" aria-label="Recommended" role="img"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6L2.5 9.4l6.6-.8z"/></svg>'
     const CONTAINER_HINTS = {
-      mp4: 'MP4 plays everywhere: phones, TVs, editors. Best default.',
+      mp4: 'MP4 with H.264 plays everywhere: phones, TVs, editors. Best default.',
       mkv: 'MKV holds any codec plus several audio tracks and subtitles in one file. Needed for dubs.',
       webm: 'WebM is the open format for VP9 and AV1. Browsers and most players.'
+    }
+    // Above 1080p YouTube has no H.264, so an MP4 there holds AV1 (or VP9).
+    function containerHint(c, row) {
+      const codec = row && row.video && row.video.vcodec
+      if (c === 'mp4' && codec && codec !== 'H.264') {
+        return `MP4 with ${codec}: plays on recent phones and PCs and in VLC; some TVs and editors cannot open it.`
+      }
+      return CONTAINER_HINTS[c] || c.toUpperCase()
     }
     const AUDIO_HINTS = {
       mp3: 'MP3 plays everywhere.',
@@ -823,7 +835,7 @@
             const b = el('button', 'fchip' + (c === state.container ? ' on' : ''), c.toUpperCase())
             b.type = 'button'
             if (rec && rec.container === c) b.insertAdjacentHTML('afterbegin', STAR_ICON)
-            b.title = (CONTAINER_HINTS[c] || c.toUpperCase()) + '\n' + sizeText(state.quality, c)
+            b.title = containerHint(c, rows.find((r) => r.container === c)) + '\n' + sizeText(state.quality, c)
             b.addEventListener('click', (e) => {
               e.stopPropagation()
               if (state.container === c) return

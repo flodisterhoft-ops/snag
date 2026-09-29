@@ -3,6 +3,13 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.8.13 — 2026-09-29
+
+- MP4 now means H.264 whenever the site has it, in Snag and in the Chrome panel. The recommended MP4 choice used to take the smallest stream, which on YouTube is AV1 even at 1080p, and many TVs, older Macs and video editors cannot open AV1. YouTube's 1440p and 4K only exist as AV1, and the hint now says so. MKV and WebM still take the smallest file.
+- The format list shows YouTube's regular 1080p H.264 stream with its size, instead of an HLS copy whose size is unknown.
+- Settings, the format picker and the Chrome panel no longer call WAV and FLAC lossless for downloads: they cannot add back quality the source never had. **Original** keeps a site's own audio with no re-encoding.
+- Settings → Speed marks **Fast** as the recommended Connection boost; it already fills a gigabit line.
+
 ## 1.8.12 — 2026-09-29
 
 - New **Convert** tab: drop local videos or audio files anywhere in the main window, choose a format, and convert with the bundled FFmpeg. Audio formats: MP3, M4A, WAV, FLAC, OGG, and Opus. Video formats: MP4, MKV, MOV, and WebM.
