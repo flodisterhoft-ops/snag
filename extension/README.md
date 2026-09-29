@@ -2,11 +2,15 @@
 
 Companion extension for the [Snag](../README.md) downloader. It adds:
 
-- A translucent **download button** over supported, visible HTML5 video players
+- A **download tab** attached to the top-right corner of supported, visible HTML5 video
+  players (and to the top-left corner of hovered YouTube thumbnails). It steps aside when
+  the page opens a menu or dialog over it.
 - An animated in-page picker for quality, file type, audio tracks, and live progress
 - A **toolbar button** that sends the current page to Snag
 - **Right-click menus**: download this page / this video / a link with Snag
-- A per-site off switch: right-click → *Show/hide Snag button on this site*
+- A per-site switch: right-click → *Snag for Chrome* → *Show the Snag button on this site*
+  (a checkbox). Sites
+  where it is off show "off" on the toolbar icon.
 - Optional **signed-in downloads**: when enabled in Snag (*Settings → Browser → Use my browser
   logins*), the extension exports your cookies for YouTube/Google, X, Vimeo, Twitch, Patreon,
   Reddit, Dailymotion, Instagram, Facebook, and TikTok to the paired Snag app every 30 minutes

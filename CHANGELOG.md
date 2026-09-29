@@ -3,6 +3,19 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.8.14 — 2026-09-29
+
+- Chrome extension: the download button is now a tab attached to the video's top-right corner, following the player's rounded edge, instead of a circle floating over the picture. It is brighter while the pointer is over the video. When the player has its own buttons in that corner, the tab moves along the top edge next to them, or below them onto the right edge. Thumbnails get the same tab in their top-left corner.
+- Chrome extension: the button no longer floats on top of the page's own menus and dialogs. When YouTube's Settings menu, the Share dialog, a cookie banner or any other pop-up covers its spot, it steps aside until the pop-up closes.
+- Chrome extension: the switch that hides the button on a site is now a checkbox in the right-click menu, **Show the Snag button on this site**, that shows whether it is on. A site where it is off shows "off" on the Snag toolbar icon, and switching it shows a short note on the page, so a stray click can no longer make the button vanish without a trace. The switch now also covers videos embedded in that site.
+- Chrome extension fixes:
+  - **Try again** after a failed read really reads the video again, instead of showing the same error.
+  - A video that takes long to read says so, instead of trying to start Snag or asking you to reload the page.
+  - The button on YouTube's miniplayer and on a channel's featured video downloads that video, not the whole feed or channel.
+  - Closing the panel by clicking somewhere else, such as YouTube's search box, no longer pulls the focus back to Snag's button.
+  - While Snag is closed, the extension stops looking for it in the background every second. **Open Snag** reacts faster, and a download card no longer gives up after a single missed update.
+  - Web pages can no longer start downloads by faking clicks on Snag's button or panel.
+
 ## 1.8.13 — 2026-09-29
 
 - MP4 now means H.264 whenever the site has it, in Snag and in the Chrome panel. The recommended MP4 choice used to take the smallest stream, which on YouTube is AV1 even at 1080p, and many TVs, older Macs and video editors cannot open AV1. YouTube's 1440p and 4K only exist as AV1, and the hint now says so. MKV and WebM still take the smallest file.

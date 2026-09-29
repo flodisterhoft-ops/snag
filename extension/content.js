@@ -8,11 +8,28 @@
 ;(() => {
   const MIN_WIDTH = 250
   const MIN_HEIGHT = 140
-  const BTN_SIZE = 36
-  const INSET = 10
+  // The button is a tab attached to the video's edge (see content.css).
+  const BTN_W = 44
+  const BTN_H = 36
+  // Keeps a tab that moved left of corner controls off the far edge.
+  const EDGE_MARGIN = 10
   const PANEL_BASE_WIDTH = 300
   const HOST = location.hostname
   const IS_YT = /(^|\.)youtube\.com$/i.test(HOST)
+  // The site in the address bar. The right-click switch is per site, and an
+  // embedded player (a YouTube or Vimeo frame on a blog) follows the switch
+  // of the page it sits in as well as its own.
+  const TOP_HOST = (() => {
+    try {
+      const origins = location.ancestorOrigins
+      return origins && origins.length ? new URL(origins[origins.length - 1]).hostname : HOST
+    } catch {
+      return HOST
+    }
+  })()
+  function isDisabledHere(list) {
+    return Array.isArray(list) && (list.includes(HOST) || list.includes(TOP_HOST))
+  }
 
   // The corner toast is sized for a 1920px-wide viewport; wide 4K desktops
   // get it proportionally larger so it stays readable. The picker panel keeps
@@ -63,25 +80,40 @@
     return 'snag://download?url=' + encodeURIComponent(url || location.href)
   }
 
+  // A YouTube watch or Shorts URL, or null for any other YouTube page.
+  function youtubeVideoUrl(href) {
+    try {
+      const parsed = new URL(href, location.origin)
+      const videoId = parsed.searchParams.get('v')
+      if (videoId && /^[\w-]{6,}$/.test(videoId)) return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`
+      const short = parsed.pathname.match(/^\/shorts\/([\w-]{6,})/)
+      if (short) return `https://www.youtube.com/shorts/${short[1]}`
+    } catch {
+      /* not a video link */
+    }
+    return null
+  }
+
   // The page URL is not always the video's URL. On X/Twitter the feed itself
   // is not extractable — resolve the enclosing tweet's permalink instead.
+  // On YouTube this is null when the page does not say which video is
+  // playing: a feed or channel URL would make Snag read the whole channel.
   function resolveTargetUrl(video) {
-    if (/(^|\.)youtube\.com$/i.test(HOST)) {
+    if (IS_YT) {
       // Homepage hover previews are portaled into a global ytd-video-preview,
       // outside the thumbnail card. YouTube keeps the real watch link inside
       // that preview even though the <video> itself has no useful ancestor URL.
       const preview = video && video.closest && video.closest('ytd-video-preview')
       const previewLink = preview && preview.querySelector('a[href*="/watch?v="], a[href*="/shorts/"]')
-      const candidate = previewLink ? previewLink.href : location.href
-      try {
-        const parsed = new URL(candidate, location.origin)
-        const videoId = parsed.searchParams.get('v')
-        if (videoId) return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`
-        const short = parsed.pathname.match(/^\/shorts\/([\w-]+)/)
-        if (short) return `https://www.youtube.com/shorts/${short[1]}`
-      } catch {
-        // Fall through to the normal page URL.
-      }
+      const fromPreview = previewLink && youtubeVideoUrl(previewLink.href)
+      if (fromPreview) return fromPreview
+      const fromPage = youtubeVideoUrl(location.href)
+      if (fromPage) return fromPage
+      // The miniplayer and a channel's trailer play on feed and channel
+      // pages; the player's own title link names the video.
+      const player = video && video.closest && video.closest('.html5-video-player')
+      const titleLink = player && player.querySelector('a.ytp-title-link[href]')
+      return (titleLink && youtubeVideoUrl(titleLink.href)) || null
     }
     if (/(^|\.)(x\.com|twitter\.com)$/i.test(HOST)) {
       const statusRe = /\/([A-Za-z0-9_]+)\/status\/(\d+)/
@@ -101,7 +133,7 @@
   // Title and thumbnail the page already knows, so the panel can show the
   // video header the instant it opens instead of after yt-dlp finishes.
   function pageMeta(video) {
-    const url = resolveTargetUrl(video)
+    const url = resolveTargetUrl(video) || location.href
     let title = (document.title || '').replace(/\s*[-–|]\s*(YouTube|Vimeo|TikTok|X|Twitter|Dailymotion|Twitch)\s*$/i, '').trim()
     let thumbnail = null
     const yt = url.match(/[?&]v=([\w-]{6,})/) || url.match(/\/shorts\/([\w-]{6,})/)
@@ -114,25 +146,39 @@
     return { title, thumbnail }
   }
 
+  // A reply that never came back means a stale page only when this script's
+  // extension context is gone (Snag reloaded the extension). Chrome can also
+  // stop the background worker in the middle of a long request; the context
+  // survives that, and asking again works.
   function sendMessage(msg) {
     return new Promise((resolve) => {
+      const lost = () => resolve({ ok: false, error: chrome.runtime && chrome.runtime.id ? 'interrupted' : 'extension' })
       try {
         chrome.runtime.sendMessage(msg, (res) => {
-          if (chrome.runtime.lastError) resolve({ ok: false, error: 'extension' })
-          else resolve(res || { ok: false, error: 'extension' })
+          if (chrome.runtime.lastError || !res) lost()
+          else resolve(res)
         })
       } catch {
-        resolve({ ok: false, error: 'extension' })
+        lost()
       }
     })
   }
 
-  function requestAnalysis(url) {
+  // Background reads stop for a while once Snag turned out to be closed:
+  // every visible video would otherwise scan for it again and again.
+  let prefetchPausedUntil = 0
+
+  function requestAnalysis(url, retried) {
     let request = analysisByUrl.get(url)
     if (!request) {
       request = sendMessage({ type: 'snag:analyze', url }).then((result) => {
-        if (!result || result.error === 'not-running' || result.error === 'not-paired' || result.error === 'extension') {
+        const error = result && result.error
+        if (!result || ['not-running', 'not-paired', 'extension', 'timeout', 'interrupted'].includes(error)) {
           analysisByUrl.delete(url)
+          if (error === 'not-running' || error === 'not-paired') prefetchPausedUntil = Date.now() + 30000
+          // The app usually finished (and cached) the work a stopped worker
+          // was waiting for.
+          if (error === 'interrupted' && !retried) return requestAnalysis(url, true)
         }
         return result
       })
@@ -144,6 +190,7 @@
 
   function prefetchAnalysis(video) {
     const url = resolveTargetUrl(video)
+    if (!url || Date.now() < prefetchPausedUntil) return
     if (analysisByUrl.has(url)) return
     if (prefetchTimer && prefetchUrl === url) return
     clearTimeout(prefetchTimer)
@@ -365,7 +412,11 @@
     const p = panel
     panel = null
     p.cleanup()
-    if (p.returnFocus && p.returnFocus.isConnected) p.returnFocus.focus({ preventScroll: true })
+    // Hand focus back to the button only when it was in the panel (Escape,
+    // the close button); a click into the page's search box keeps its focus.
+    if (document.activeElement === p.host && p.returnFocus && p.returnFocus.isConnected) {
+      p.returnFocus.focus({ preventScroll: true })
+    }
     if (immediate) p.host.remove()
     else {
       p.root.classList.add('closing')
@@ -418,7 +469,7 @@
     const host = el('div', 'snag-panel-host')
     host.dataset.snagPanel = 'true'
     host.style.cssText = `position:absolute;z-index:2147483647;width:${PANEL_BASE_WIDTH}px;`
-    const shadow = host.attachShadow({ mode: 'open' })
+    const shadow = host.attachShadow({ mode: 'closed' })
     const sheet = new CSSStyleSheet()
     sheet.replaceSync(PANEL_CSS)
     shadow.adoptedStyleSheets = [sheet]
@@ -433,7 +484,7 @@
     root.style.transformOrigin = positionPanel(host, btn)
     btn.style.visibility = 'hidden'
 
-    const pageUrl = target ? target.url : resolveTargetUrl(video)
+    const pageUrl = (target ? target.url : resolveTargetUrl(video)) || location.href
     const state = {
       info: null, defaults: null, kind: 'video',
       quality: 0, container: null,
@@ -668,7 +719,12 @@
       const err = el('span', 'err', message)
       const retry = el('button', 'btn2', 'Try again')
       retry.type = 'button'
-      retry.addEventListener('click', start)
+      // A failed read stays cached (so background prefetches do not repeat
+      // it); trying again means reading the video afresh.
+      retry.addEventListener('click', () => {
+        analysisByUrl.delete(pageUrl)
+        void start()
+      })
       const app = el('button', 'btn2', 'Open in Snag app')
       app.type = 'button'
       app.addEventListener('click', () => { location.href = deepLink(pageUrl); closePanel() })
@@ -1079,6 +1135,14 @@
         renderNotRunning('Snag is running but refused the connection. Reload the extension once.')
         return
       }
+      if (analyzeRes.error === 'timeout') {
+        renderError('Snag is taking unusually long to read this video. Try again in a moment.')
+        return
+      }
+      if (analyzeRes.error === 'interrupted') {
+        renderError('Lost the connection to Snag while reading this video.')
+        return
+      }
       const data = analyzeRes.data
       if (!data || !data.ok || !data.info) {
         renderError((data && data.error) || 'Could not read this video.')
@@ -1139,15 +1203,18 @@
     btn.setAttribute('aria-label', 'Download with Snag')
     // Hovering is a strong hint that a click is coming: start (or reuse) the
     // analysis right away so the picker is ready when the panel opens.
-    btn.addEventListener('pointerenter', () => {
+    btn.addEventListener('pointerenter', (e) => {
       const url = targetUrlFor(btn)
-      if (!analysisByUrl.has(url)) void requestAnalysis(url)
+      if (e.isTrusted && url && !analysisByUrl.has(url)) void requestAnalysis(url)
     })
     btn.addEventListener(
       'click',
       (e) => {
         e.preventDefault()
         e.stopPropagation()
+        // Only a real click: a page must not be able to start downloads by
+        // scripting a click on Snag's button.
+        if (!e.isTrusted || !targetUrlFor(btn)) return
         if (panel) {
           if (panel.anchor === btn) closePanel()
           else {
@@ -1181,7 +1248,7 @@
   // goes below the whole cluster of controls in its column — never wedged in
   // between two of them — and stays at the corner when the corner is free.
   const CONTROL_SELECTOR =
-    'button, a[href], input, select, textarea, [role="button"], [role="slider"], [role="menuitem"], [role="link"], [role="checkbox"], [role="switch"]'
+    'button, a[href], input, select, textarea, [role="button"], [role="slider"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [role="link"], [role="checkbox"], [role="switch"]'
   const PROBE_STEP = 8
   const PROBE_LIMIT = 220
   const CLUSTER_GAP = 6
@@ -1189,6 +1256,22 @@
   // Anything larger than this under the button is a wrapper or a card link,
   // not an overlay control (mute, captions, share are all well under it).
   const MAX_CONTROL_SIZE = 120
+
+  // Small things drawn on the picture (a "CC" or "HD" badge, a live label)
+  // are in the way too, even when they are not buttons — as long as they
+  // are actually showing.
+  function badgeAt(node, video) {
+    if (!(node instanceof Element) || node === video || (video && node.contains(video))) return null
+    const r = node.getBoundingClientRect()
+    if (r.width < 8 || r.height < 8 || r.width > MAX_CONTROL_SIZE || r.height > MAX_CONTROL_SIZE) return null
+    if (!node.textContent.trim() && !/^(img|svg|canvas)$/i.test(node.tagName) && !node.querySelector('img, svg')) return null
+    for (let el = node, i = 0; el && i < 5; el = el.parentElement, i++) {
+      if (video && el.contains(video)) break
+      const style = getComputedStyle(el)
+      if (style.visibility === 'hidden' || parseFloat(style.opacity) < 0.2) return null
+    }
+    return node
+  }
 
   function controlAt(x, y, btn, video) {
     let stack
@@ -1202,10 +1285,15 @@
       if (node.classList && node.classList.contains('snag-dl-btn')) continue
       if (node === video) return null
       const control = node.closest ? node.closest(CONTROL_SELECTOR) : null
-      if (!control) continue
-      // A link wrapping the whole player is not a control in the way, and
-      // neither is any card-sized element.
-      if (video && control.contains(video)) return null
+      // A link wrapping the whole player is not a control in the way, but a
+      // badge drawn inside it still is.
+      if (!control || (video && control.contains(video))) {
+        const badge = badgeAt(node, video)
+        if (badge) return badge
+        if (control) return null
+        continue
+      }
+      // Neither is any card-sized element.
       const r = control.getBoundingClientRect()
       if (r.width > MAX_CONTROL_SIZE || r.height > MAX_CONTROL_SIZE) return null
       return control
@@ -1236,14 +1324,77 @@
     return inset
   }
 
-  // Height of a player's top bar when it has one (classic YouTube layout),
-  // so the button starts below it instead of colliding on hover.
-  function playerTopChrome(video) {
-    const player = video && video.closest && video.closest('.html5-video-player')
-    const top = player && player.querySelector('.ytp-chrome-top')
-    if (!top) return 0
-    const h = top.getBoundingClientRect().height
-    return h > 0 && h < 120 ? h : 0
+  // The element that holds a video together with its own overlay controls:
+  // YouTube's player box, elsewhere the outermost ancestor that is still
+  // about the video's size (controls sit inside it, next to the <video>).
+  function playerOf(video) {
+    const yt = video.closest('.html5-video-player')
+    if (yt) return yt
+    const v = video.getBoundingClientRect()
+    let box = video.parentElement || video
+    for (let node = video.parentElement, i = 0; node && i < 6; node = node.parentElement, i++) {
+      const r = node.getBoundingClientRect()
+      if (r.width > v.width + 60 || r.height > v.height + 160) break
+      box = node
+    }
+    return box
+  }
+
+  // Menus, dialogs and pop-ups — the page's own or the player's — that can
+  // open on top of a video.
+  const POPUP_SELECTOR =
+    '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [aria-modal="true"], dialog, tp-yt-iron-dropdown, .ytp-popup, .ytp-contextmenu'
+
+  function topmostPageElement(x, y) {
+    let stack
+    try {
+      stack = document.elementsFromPoint(x, y)
+    } catch {
+      return null
+    }
+    for (const node of stack) {
+      if (node.classList && node.classList.contains('snag-dl-btn')) continue
+      if (node.dataset && node.dataset.snagPanel) continue
+      return node
+    }
+    return null
+  }
+
+  // The button sits at the top of the page's stacking order, so it would
+  // float above anything the page opens over the video (YouTube's menus and
+  // Share dialog, cookie banners, sign-in prompts). Instead it steps aside
+  // whenever something other than the player itself covers its spot.
+  // `owner` is the video (or thumbnail) the button belongs to: a dialog that
+  // contains it (a lightbox showing the video) is not in the way; `belongs`
+  // says whether an element is part of what the button sits on.
+  function coveredSpot(left, top, width, height, owner, belongs) {
+    const points = [
+      [left + width / 2, top + height / 2],
+      [left + 4, top + height - 4],
+      [left + width - 4, top + 4]
+    ]
+    for (const [x, y] of points) {
+      if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue
+      const node = topmostPageElement(x, y)
+      if (!node) continue
+      const popup = node.closest ? node.closest(POPUP_SELECTOR) : null
+      if ((popup && !popup.contains(owner)) || !belongs(node)) return true
+    }
+    return false
+  }
+
+  // Corner radius of the player where the tab sits, so the tab's outer
+  // corner follows the rounded edge instead of poking out of it.
+  function cornerRadius(video, rect, corner) {
+    for (let node = video, i = 0; node && i < 8; node = node.parentElement, i++) {
+      const r = node.getBoundingClientRect()
+      const alignedX = corner === 'right' ? Math.abs(r.right - rect.right) < 2 : Math.abs(r.left - rect.left) < 2
+      if (!alignedX || Math.abs(r.top - rect.top) > 2) continue
+      const style = getComputedStyle(node)
+      const radius = parseFloat(corner === 'right' ? style.borderTopRightRadius : style.borderTopLeftRadius)
+      if (radius > 0) return Math.min(radius, 16)
+    }
+    return 0
   }
 
   // The part of a video that can actually be seen: hover previews and some
@@ -1252,9 +1403,13 @@
   function visibleRect(video) {
     const b = video.getBoundingClientRect()
     const r = { left: b.left, top: b.top, right: b.right, bottom: b.bottom }
+    // A fixed player (a news site's floating mini player) is not clipped by
+    // the page it floats above, only by its own frame.
+    let escaped = getComputedStyle(video).position === 'fixed'
     let node = video.parentElement
-    for (let i = 0; node && i < 8; i++, node = node.parentElement) {
+    for (let i = 0; node && i < 8 && !escaped; i++, node = node.parentElement) {
       const style = getComputedStyle(node)
+      if (style.position === 'fixed') escaped = true
       if (style.overflowX === 'visible' && style.overflowY === 'visible' && style.clipPath === 'none') continue
       const c = node.getBoundingClientRect()
       if (c.width === 0 || c.height === 0) continue
@@ -1271,10 +1426,10 @@
   // Offset below `baseTop` at which the button clears every overlay control
   // in its column — the fallback when there is no room beside them.
   function clearOffset(left, baseTop, maxTop, btn, video) {
-    const x = left + BTN_SIZE / 2
+    const x = left + BTN_W / 2
     const rects = []
     const seen = new Set()
-    const limit = Math.min(baseTop + PROBE_LIMIT, maxTop + BTN_SIZE)
+    const limit = Math.min(baseTop + PROBE_LIMIT, maxTop + BTN_H)
     for (let y = baseTop; y <= limit; y += PROBE_STEP) {
       const control = controlAt(x, y, btn, video)
       if (control && !seen.has(control)) {
@@ -1284,28 +1439,42 @@
     }
     let top = baseTop
     for (let guard = 0; guard < 12; guard++) {
-      const hit = rects.filter((r) => r.top < top + BTN_SIZE + CLUSTER_GAP && r.bottom > top - CLUSTER_GAP)
+      const hit = rects.filter((r) => r.top < top + BTN_H + CLUSTER_GAP && r.bottom > top - CLUSTER_GAP)
       if (!hit.length) break
       top = Math.max(...hit.map((r) => r.bottom)) + CLUSTER_GAP
     }
     return Math.max(0, Math.round(top - baseTop))
   }
 
-  // Where the button goes relative to the top-right corner slot: the corner
-  // itself when it is free; otherwise directly left of the whole group of
-  // controls sitting there (mute, captions), so it always stays on the top
-  // edge in a familiar spot. Only when that would leave the picture does it
-  // drop below the controls instead.
+  // A control's own chip counts as one obstacle: YouTube's card teaser is a
+  // title with a close button, and the tab must not land on the title.
+  function obstacleRect(control, video) {
+    const r = control.getBoundingClientRect()
+    const parent = control.parentElement
+    if (!parent || parent.contains(video)) return r
+    const p = parent.getBoundingClientRect()
+    return p.width > r.width && p.width <= 480 && p.height <= r.height + 16 ? p : r
+  }
+
+  // Farther than this from the corner, a tab on the top edge no longer reads
+  // as the video's corner button; it drops below the obstacle instead.
+  const MAX_EDGE_SHIFT = 180
+
+  // Where the tab goes relative to the top-right corner: the corner itself
+  // when it is free; otherwise along the top edge directly left of the whole
+  // group of controls sitting there (mute, captions), so it stays on the edge
+  // in a familiar spot. When that is too far or would leave the picture, it
+  // drops below the controls, onto the right edge.
   function cornerPlacement(left, baseTop, visLeft, maxTop, btn, video) {
-    const y = baseTop + BTN_SIZE / 2
+    const y = baseTop + BTN_H / 2
     const rects = []
     const seen = new Set()
-    const minX = Math.max(visLeft + INSET, left - 360)
-    for (let x = left + BTN_SIZE / 2; x >= minX; x -= PROBE_STEP) {
+    const minX = Math.max(visLeft + EDGE_MARGIN, left - 360)
+    for (let x = left + BTN_W / 2; x >= minX; x -= PROBE_STEP) {
       const control = controlAt(x, y, btn, video)
       if (control && !seen.has(control)) {
         seen.add(control)
-        rects.push(control.getBoundingClientRect())
+        rects.push(obstacleRect(control, video))
       }
     }
     let slotLeft = left
@@ -1314,46 +1483,66 @@
       const touching = rects.filter(
         (r) =>
           r.right > slotLeft - CLUSTER_GAP &&
-          r.left < slotLeft + BTN_SIZE + CLUSTER_GAP &&
+          r.left < slotLeft + BTN_W + CLUSTER_GAP &&
           r.bottom > baseTop - CLUSTER_GAP &&
-          r.top < baseTop + BTN_SIZE + CLUSTER_GAP
+          r.top < baseTop + BTN_H + CLUSTER_GAP
       )
       if (!touching.length) break
       hit = true
-      slotLeft = Math.min(...touching.map((r) => r.left)) - CLUSTER_GAP - BTN_SIZE
+      slotLeft = Math.min(...touching.map((r) => r.left)) - CLUSTER_GAP - BTN_W
     }
     if (!hit) return { dx: 0, dy: 0 }
-    if (slotLeft >= visLeft + INSET) return { dx: Math.round(slotLeft - left), dy: 0 }
+    if (slotLeft >= visLeft + EDGE_MARGIN && left - slotLeft <= MAX_EDGE_SHIFT) {
+      return { dx: Math.round(slotLeft - left), dy: 0 }
+    }
     return { dx: 0, dy: clearOffset(left, baseTop, maxTop, btn, video) }
   }
 
-  // Returns false when the visible part of the video is too small to host
-  // the button (mostly scrolled out of view).
+  // Places the tab flush against the top-right corner of the visible
+  // picture (below a fixed masthead when the player scrolled under it).
+  // Returns false when there is no room for it, or when something the page
+  // opened is covering that spot.
   function position(video, btn) {
     const rect = visibleRect(video)
     const visLeft = Math.max(rect.left, 0)
     const visRight = Math.min(rect.right, innerWidth)
-    const left = visRight - BTN_SIZE - INSET
-    const headerBottom = fixedTopInset(left + BTN_SIZE / 2, video)
+    const left = visRight - BTN_W
+    const headerBottom = fixedTopInset(left + BTN_W / 2, video)
     const visTop = Math.max(rect.top, headerBottom)
     const visBottom = Math.min(rect.bottom, innerHeight)
-    if (visBottom - visTop < BTN_SIZE + 2 * INSET || visRight - visLeft < BTN_SIZE + 2 * INSET) return false
+    if (visBottom - visTop < BTN_H + 2 * EDGE_MARGIN || visRight - visLeft < BTN_W + 2 * EDGE_MARGIN) return false
 
-    const baseTop = rect.top >= headerBottom ? rect.top + INSET + playerTopChrome(video) : visTop + INSET
-    const maxTop = visBottom - BTN_SIZE - INSET
+    const baseTop = visTop
+    const maxTop = visBottom - BTN_H - EDGE_MARGIN
 
     const now = performance.now()
-    const place = btn._snagPlace || (btn._snagPlace = { dx: 0, dy: 0, key: '', checkedAt: 0 })
-    const key = Math.round(rect.width) + 'x' + Math.round(rect.height) + '@' + Math.round(baseTop)
+    const place = btn._snagPlace || (btn._snagPlace = { dx: 0, dy: 0, key: '', checkedAt: 0, radius: 0 })
+    // Scrolling moves the whole player and the tab's spot beside its controls
+    // with it, so only a resize, sliding under a fixed masthead or past the
+    // window edge, or the timer triggers a new (expensive) probe.
+    const key = [Math.round(rect.width), Math.round(rect.height), rect.top >= headerBottom, Math.round(visRight - rect.right)].join(',')
     if (key !== place.key || now - place.checkedAt > PLACEMENT_RECHECK_MS) {
       place.key = key
       place.checkedAt = now
       const spot = cornerPlacement(left, baseTop, visLeft, maxTop, btn, video)
       place.dx = spot.dx
       place.dy = spot.dy
+      // Only a picture whose own top-right corner is on screen is rounded
+      // there; under a masthead or at the window edge the tab stays square.
+      const ownCorner = rect.top >= headerBottom && rect.right <= innerWidth
+      place.radius = ownCorner ? cornerRadius(video, rect, 'right') : 0
     }
-    btn.style.left = left + place.dx + 'px'
-    btn.style.top = Math.min(baseTop + place.dy, maxTop) + 'px'
+    const top = Math.min(baseTop + place.dy, maxTop)
+    const x = left + place.dx
+    const player = playerOf(video)
+    if (coveredSpot(x, top, BTN_W, BTN_H, video, (node) => node === video || player.contains(node) || node.contains(video))) return false
+
+    btn.classList.toggle('snag-edge-top', place.dy === 0 && place.dx < 0)
+    btn.classList.toggle('snag-edge-right', place.dy > 0)
+    btn.style.setProperty('--snag-corner', place.radius + 'px')
+    btn.style.left = x + 'px'
+    btn.style.top = top + 'px'
+    btn._snagRect = rect
     return true
   }
 
@@ -1391,6 +1580,8 @@
     .card.err .fill { background: #ff6b5e; }
     .card.err .row { color: #ff9d94; white-space: normal; }
     .card.done .row strong { color: #eef0f3; }
+    .card.notice { padding: 11px 13px; }
+    .note { font-size: 11.5px; line-height: 1.4; color: #a7adb7; }
     .x { width: 24px; height: 24px; border: 0; background: none; color: #a7adb7; cursor: pointer; border-radius: 7px; font-size: 13px; flex-shrink: 0; }
     .x:hover { background: rgba(255,255,255,0.08); color: #fff; }
     @media (prefers-reduced-motion: reduce) { .card, .fill, .ok, .ok svg { transition: none !important; animation-duration: 0.001ms !important; } }
@@ -1405,7 +1596,7 @@
     const host = el('div', 'snag-toast-host')
     host.dataset.snagPanel = 'true'
     host.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;pointer-events:none;zoom:' + uiScale() + ';'
-    const shadow = host.attachShadow({ mode: 'open' })
+    const shadow = host.attachShadow({ mode: 'closed' })
     const sheet = new CSSStyleSheet()
     sheet.replaceSync(TOAST_CSS)
     shadow.adoptedStyleSheets = [sheet]
@@ -1414,6 +1605,21 @@
     shadow.appendChild(toastList)
     document.documentElement.appendChild(host)
     return toastList
+  }
+
+  // A short message card in the same corner as the download toasts.
+  function showNotice(title, detail) {
+    const card = el('div', 'card notice')
+    const body = el('div', 'body')
+    body.appendChild(el('div', 't', title))
+    body.appendChild(el('div', 'note', detail))
+    card.appendChild(body)
+    ensureToastList().appendChild(card)
+    requestAnimationFrame(() => card.classList.add('in'))
+    setTimeout(() => {
+      card.classList.add('out')
+      setTimeout(() => card.remove(), 320)
+    }, 5500)
   }
 
   // A copy of the panel's thumbnail arcs down into the corner where the
@@ -1543,6 +1749,9 @@
       }
     }
 
+    // A reply lost to a busy moment or a restarting worker is no reason to
+    // give up on a running download; only a run of them is.
+    let misses = 0
     const poll = async () => {
       if (!toasts.has(jobId) || entry.settled) return
       const res = await sendMessage({ type: 'snag:job', jobId })
@@ -1550,9 +1759,15 @@
       const job = res.ok && res.data && res.data.job
       if (job && job.sizeLabel) sizeText = job.sizeLabel
       if (!job) {
+        const transient = ['not-running', 'interrupted', 'timeout'].includes(res.error)
+        if (transient && ++misses < 4) {
+          entry.timer = setTimeout(poll, 1200)
+          return
+        }
         settle('err', res.error === 'not-running' ? 'Snag closed — check its queue.' : (res.data && res.data.error) || 'Lost track of this download.')
         return
       }
+      misses = 0
       if (job.status === 'completed') {
         settle('done')
         return
@@ -1588,7 +1803,8 @@
   // ---------- Thumbnail hover button (YouTube grids, sidebars, search) ----------
 
   const THUMB_LINK_SELECTOR = 'a[href*="/watch?v="], a[href*="/shorts/"]'
-  const THUMB_BTN_INSET = 6
+  const THUMB_W = 40
+  const THUMB_H = 32
   let thumbBtn = null
   let thumbLink = null
   let thumbHideTimer = null
@@ -1638,14 +1854,34 @@
     return { url: target.url, title, thumbnail: `https://i.ytimg.com/vi/${target.id}/hqdefault.jpg` }
   }
 
+  // Rounding of the thumbnail picture, which sits inside the link.
+  function thumbRadius(link) {
+    if (link._snagRadius != null) return link._snagRadius
+    const nodes = [link, ...link.querySelectorAll('yt-thumbnail-view-model, yt-image, img')].slice(0, 6)
+    let radius = 0
+    for (const node of nodes) {
+      const value = parseFloat(getComputedStyle(node).borderTopLeftRadius)
+      if (value > 0) {
+        radius = Math.min(value, 16)
+        break
+      }
+    }
+    link._snagRadius = radius
+    return radius
+  }
+
+  // Flush in the thumbnail's top-left corner, below a fixed masthead; hidden
+  // while one of the page's menus or dialogs covers that corner.
   function placeThumbButton() {
     if (!thumbBtn || !thumbLink) return false
     if (!thumbLink.isConnected) return false
     const r = thumbLink.getBoundingClientRect()
     if (r.width < 110 || r.height < 60 || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) return false
-    const top = Math.max(r.top + THUMB_BTN_INSET, fixedTopInset(r.left + THUMB_BTN_INSET + 15, null) + 4)
-    if (top + 30 > r.bottom - 4) return false
-    thumbBtn.style.left = r.left + THUMB_BTN_INSET + 'px'
+    const top = Math.max(r.top, fixedTopInset(r.left + THUMB_W / 2, null))
+    if (top + THUMB_H > r.bottom - 4) return false
+    if (coveredSpot(r.left, top, THUMB_W, THUMB_H, thumbLink, () => true)) return false
+    thumbBtn.style.setProperty('--snag-corner', (top === r.top ? thumbRadius(thumbLink) : 0) + 'px')
+    thumbBtn.style.left = r.left + 'px'
     thumbBtn.style.top = top + 'px'
     return true
   }
@@ -1659,6 +1895,7 @@
   }
 
   function showThumbButton(link) {
+    if (thumbBtn && !thumbBtn.isConnected) document.documentElement.appendChild(thumbBtn)
     if (!thumbBtn) {
       thumbBtn = makeButton(null)
       thumbBtn.classList.add('snag-thumb-btn')
@@ -1680,7 +1917,7 @@
     const url = thumbBtn._snagTarget.url
     thumbPrefetchTimer = setTimeout(() => {
       thumbPrefetchTimer = null
-      if (thumbLink === link && !analysisByUrl.has(url)) void requestAnalysis(url)
+      if (thumbLink === link && !analysisByUrl.has(url) && Date.now() >= prefetchPausedUntil) void requestAnalysis(url)
     }, 600)
   }
 
@@ -1708,7 +1945,7 @@
   document.addEventListener(
     'pointerover',
     (e) => {
-      if (disabled) return
+      if (disabled || !e.isTrusted) return
       const node = e.target
       if (node === thumbBtn || (node.classList && node.classList.contains('snag-dl-btn'))) return
       const link = thumbnailLink(node)
@@ -1743,7 +1980,10 @@
     for (const video of videos) {
       seen.add(video)
       let btn = buttons.get(video)
-      if (eligible(video) && !coveredByThumbButton(video)) {
+      // Pages that re-render the whole document (React hydration) drop
+      // unknown children of <html>; put the button back.
+      if (btn && !btn.isConnected) document.documentElement.appendChild(btn)
+      if (eligible(video) && !coveredByThumbButton(video) && resolveTargetUrl(video)) {
         if (!btn) {
           // YouTube and other SPA players frequently replace the <video>
           // element while keeping the same visible player. Reuse the existing
@@ -1804,8 +2044,12 @@
   }
 
   let scheduled = false
+  const liveVideos = document.getElementsByTagName('video')
   function schedule() {
     if (scheduled) return
+    // Frames without any video (live chat, ads, widgets) have nothing to
+    // place; skip the work their constant DOM changes would trigger.
+    if (!liveVideos.length && !buttons.size && !thumbBtn && !panel) return
     scheduled = true
     requestAnimationFrame(() => {
       scheduled = false
@@ -1813,10 +2057,47 @@
     })
   }
 
+  // Brighter while the pointer is over the video a button belongs to.
+  let nearFrame = 0
+  addEventListener(
+    'pointermove',
+    (e) => {
+      if (nearFrame || !buttons.size) return
+      const x = e.clientX
+      const y = e.clientY
+      nearFrame = requestAnimationFrame(() => {
+        nearFrame = 0
+        for (const btn of buttons.values()) {
+          const r = btn._snagRect
+          const near = !!r && btn.style.display !== 'none' && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
+          btn.classList.toggle('snag-near', near)
+        }
+      })
+    },
+    { passive: true, capture: true }
+  )
+  document.documentElement.addEventListener('mouseleave', () => {
+    for (const btn of buttons.values()) btn.classList.remove('snag-near')
+  })
+
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.disabledSites) {
-      disabled = (changes.disabledSites.newValue || []).includes(HOST)
-      if (disabled) closePanel(true)
+      const was = disabled
+      disabled = isDisabledHere(changes.disabledSites.newValue)
+      if (disabled) {
+        closePanel(true)
+        hideThumbButton()
+      }
+      // The switch lives in the right-click menu; say what just happened so
+      // a stray click cannot make the button vanish without a trace.
+      if (was !== disabled && window === window.top && document.visibilityState === 'visible') {
+        showNotice(
+          disabled ? 'Snag button hidden on this site' : 'Snag button is back on this site',
+          disabled
+            ? 'To bring it back, right-click the page, open Snag for Chrome and tick “Show the Snag button on this site”.'
+            : 'Right-click the page and open Snag for Chrome to hide it here again.'
+        )
+      }
       schedule()
     }
   })
@@ -1831,13 +2112,13 @@
   // Layout can shift without DOM mutations (player resizes, lazy CSS) — cheap
   // heartbeat, but only on pages that actually have a video.
   setInterval(() => {
-    if (buttons.size || document.getElementsByTagName('video').length) schedule()
+    if (buttons.size || liveVideos.length) schedule()
   }, 800)
 
   chrome.storage.local
     .get('disabledSites')
     .then(({ disabledSites = [] }) => {
-      disabled = disabledSites.includes(HOST)
+      disabled = isDisabledHere(disabledSites)
       schedule()
     })
     .catch(() => schedule())

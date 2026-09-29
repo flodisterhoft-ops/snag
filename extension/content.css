@@ -1,37 +1,70 @@
-/* Snag download button pinned over videos. Always visible, unobtrusive until hover. */
+/* Snag download button: a tab attached to the edge of the video, in its
+   top-right corner. Always visible, quieter while the pointer is elsewhere.
+   content.js adds snag-edge-top (moved left of controls sitting in the
+   corner) or snag-edge-right (moved below them) and sets --snag-corner to
+   the player's own corner radius. */
 .snag-dl-btn {
   position: fixed;
   z-index: 2147483646;
-  width: 36px;
+  box-sizing: border-box;
+  width: 44px;
   height: 36px;
   padding: 0;
   margin: 0;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 50%;
-  background-color: rgba(15, 17, 22, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-top: 0;
+  border-right: 0;
+  border-radius: 0 var(--snag-corner, 0px) 0 14px;
+  background-color: rgba(12, 14, 19, 0.76);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c6f24d' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3Cpolyline points='7 10 12 15 17 10'/%3E%3Cline x1='12' y1='15' x2='12' y2='3'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: center;
-  background-size: 19px 19px;
+  background-size: 18px 18px;
   cursor: pointer;
-  opacity: 0.55;
+  opacity: 0.62;
+  transform-origin: top right;
   transition:
     opacity 0.15s ease,
+    background-color 0.15s ease,
     transform 0.15s ease;
+}
+.snag-dl-btn.snag-edge-top {
+  border-right: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 0 0 12px 12px;
+  transform-origin: top center;
+}
+.snag-dl-btn.snag-edge-right {
+  border-top: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 12px 0 0 12px;
+  transform-origin: center right;
+}
+/* The pointer is over the video the button belongs to. */
+.snag-dl-btn.snag-near {
+  opacity: 0.92;
 }
 .snag-dl-btn:hover {
   opacity: 1;
-  transform: scale(1.07);
-  border-color: rgba(198, 242, 77, 0.6);
+  background-color: rgba(12, 14, 19, 0.92);
+  transform: scale(1.06);
 }
 .snag-dl-btn:active {
   transform: scale(0.98);
 }
+.snag-dl-btn:focus-visible {
+  outline: 2px solid #c6f24d;
+  outline-offset: -3px;
+}
 
-/* Smaller variant that sits in the top-left corner of a hovered thumbnail. */
+/* Thumbnail variant: the same tab in the top-left corner of a hovered
+   thumbnail (the top-right corner holds YouTube's own hover icons). */
 .snag-dl-btn.snag-thumb-btn {
-  width: 32px;
+  width: 40px;
   height: 32px;
-  background-size: 17px 17px;
-  opacity: 0.92;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-top: 0;
+  border-left: 0;
+  border-radius: var(--snag-corner, 0px) 0 14px 0;
+  background-size: 16px 16px;
+  opacity: 0.94;
+  transform-origin: top left;
 }

@@ -79,12 +79,15 @@ async function pairWithSnag(port) {
   }
 }
 
-// Find the port Snag is listening on (cached once found; re-scanned on failure).
-// The panel fires several requests at once — share one scan between them
-// instead of probing every port per request.
+// Find the port Snag is listening on. A port that answered moments ago is
+// used as is (the download toasts ask twice a second); a failed call clears
+// it. The panel fires several requests at once — they share one scan.
 let findSnagPromise = null
+let workingPortSeenAt = 0
+const PORT_TRUST_MS = 10000
 
 function findSnag() {
+  if (workingPort != null && Date.now() - workingPortSeenAt < PORT_TRUST_MS) return Promise.resolve(workingPort)
   if (!findSnagPromise) {
     findSnagPromise = scanForSnag().finally(() => {
       findSnagPromise = null
@@ -93,82 +96,82 @@ function findSnag() {
   return findSnagPromise
 }
 
+// Locate the app with the unauthenticated liveness probe, then pair (first
+// contact) and check the pairing on that one port only.
 async function scanForSnag() {
   await loadPairingToken()
-  const configuredPorts = Array.isArray(SNAG_CONFIG && SNAG_CONFIG.ports)
-    ? SNAG_CONFIG.ports
-    : []
-  const ports = [...new Set([...configuredPorts, ...DEFAULT_PORTS])]
-  const candidates = workingPort
-    ? [workingPort, ...ports.filter((p) => p !== workingPort)]
-    : ports
-  for (const port of candidates) {
-    try {
-      if (!pairingToken && !(await pairWithSnag(port))) continue
-      const res = await apiFetch(port, '/ping', { method: 'GET' }, 900)
-      if (res.ok) {
-        const data = await res.json()
-        if (data && data.app === 'snag') {
-          workingPort = port
-          return port
-        }
-      }
-      if (res.status === 401) {
-        await savePairingToken('')
-        if (await pairWithSnag(port)) {
-          const retry = await apiFetch(port, '/ping', { method: 'GET' }, 900)
-          if (retry.ok) {
-            workingPort = port
-            return port
-          }
-        }
-      }
-    } catch {
-      /* try next port */
-    }
+  const port = await findRunningSnag()
+  if (port == null) {
+    workingPort = null
+    return null
   }
-  workingPort = null
-  return null
+  try {
+    if (!pairingToken && !(await pairWithSnag(port))) return null
+    let res = await apiFetch(port, '/ping', { method: 'GET' }, 900)
+    if (res.status === 401) {
+      await savePairingToken('')
+      if (!(await pairWithSnag(port))) return null
+      res = await apiFetch(port, '/ping', { method: 'GET' }, 900)
+    }
+    if (!res.ok) return null
+    const data = await res.json()
+    if (!data || data.app !== 'snag') return null
+    workingPort = port
+    workingPortSeenAt = Date.now()
+    return port
+  } catch {
+    return null
+  }
 }
 
-// Liveness-only probe used while a deep link is starting Snag. Unlike
-// findSnag(), this never calls /pair and therefore cannot multiply pairing
-// attempts while the app is still booting.
+// Liveness-only probe, also used while a deep link is starting Snag. It
+// never calls /pair and therefore cannot multiply pairing attempts while
+// the app is still booting. Every port is probed at once: on Windows a
+// closed port can take about a second to refuse, and a one-by-one scan made
+// "is Snag running?" take several seconds.
 async function findRunningSnag() {
   const configuredPorts = Array.isArray(SNAG_CONFIG && SNAG_CONFIG.ports)
     ? SNAG_CONFIG.ports
     : []
   const ports = [...new Set([...configuredPorts, ...DEFAULT_PORTS])]
-  const candidates = workingPort
-    ? [workingPort, ...ports.filter((p) => p !== workingPort)]
-    : ports
-  for (const port of candidates) {
-    try {
-      const res = await apiFetch(port, '/health', { method: 'GET' }, 500)
-      if (!res.ok) continue
-      const data = await res.json()
-      if (data && data.app === 'snag') {
+  try {
+    return await Promise.any(
+      ports.map(async (port) => {
+        const res = await apiFetch(port, '/health', { method: 'GET' }, 700)
+        const data = res.ok ? await res.json() : null
+        if (!data || data.app !== 'snag') throw new Error('not snag')
         workingPort = port
         return port
-      }
-    } catch {
-      /* try next port */
-    }
+      })
+    )
+  } catch {
+    return null
   }
-  return null
 }
 
 async function callSnag(path, options, timeoutMs) {
   const port = await findSnag()
   if (port == null) return { ok: false, error: 'not-running' }
+  // Reading a video can take two minutes; without an extension call now and
+  // then Chrome would stop this worker halfway through the wait.
+  const keepAlive =
+    timeoutMs > 20000 ? setInterval(() => chrome.runtime.getPlatformInfo(() => void chrome.runtime.lastError), 20000) : null
   try {
     const res = await apiFetch(port, path, options, timeoutMs)
     const data = await res.json()
-    if (res.status === 401) return { ok: false, error: 'not-paired' }
+    if (res.status === 401) {
+      workingPortSeenAt = 0
+      return { ok: false, error: 'not-paired' }
+    }
+    workingPortSeenAt = Date.now()
     return { ok: res.ok, data }
-  } catch {
+  } catch (err) {
+    // Snag answered and is still busy: a slow request is not a closed app.
+    if (err && err.name === 'AbortError') return { ok: false, error: 'timeout' }
     workingPort = null
     return { ok: false, error: 'not-running' }
+  } finally {
+    if (keepAlive) clearInterval(keepAlive)
   }
 }
 
@@ -263,10 +266,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true
   }
   if (message.type === 'snag:analyze') {
+    // Snag allows 60 s per yt-dlp run and a second run for YouTube videos
+    // the fast client refuses.
     callSnag(
       '/analyze',
       { method: 'POST', body: JSON.stringify({ url: message.url }) },
-      45000
+      130000
     ).then(sendResponse)
     return true
   }
@@ -318,23 +323,59 @@ async function sendToSnag(tabId, targetUrl) {
   }
 }
 
-async function toggleSite(tab) {
-  let host
+function hostOf(url) {
   try {
-    host = new URL(tab.url).hostname
+    return isHttp(url) ? new URL(url).hostname : null
   } catch {
-    return
+    return null
   }
-  if (!host) return
-  const { disabledSites = [] } = await chrome.storage.local.get('disabledSites')
-  const idx = disabledSites.indexOf(host)
-  if (idx >= 0) disabledSites.splice(idx, 1)
-  else disabledSites.push(host)
-  // Content scripts on this site react via chrome.storage.onChanged.
-  await chrome.storage.local.set({ disabledSites })
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+async function disabledSiteList() {
+  const { disabledSites = [] } = await chrome.storage.local.get('disabledSites')
+  return Array.isArray(disabledSites) ? disabledSites : []
+}
+
+// The per-site switch lives in the right-click menu, where one stray click
+// hid the button on YouTube without a trace. The menu entry is a checkbox
+// that shows the active tab's state, and a hidden site says so on the
+// toolbar icon.
+async function syncSiteUi(tab) {
+  if (!tab || tab.id == null) return
+  const host = hostOf(tab.url)
+  const off = !!host && (await disabledSiteList()).includes(host)
+  const ignore = () => void chrome.runtime.lastError
+  chrome.action.setBadgeText({ tabId: tab.id, text: off ? 'off' : '' }, ignore)
+  if (off) chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: '#5b616e' }, ignore)
+  chrome.action.setTitle(
+    {
+      tabId: tab.id,
+      title: off
+        ? 'Snag button hidden on this site. Right-click the page, open Snag for Chrome and tick “Show the Snag button on this site”. Click to send this page to Snag.'
+        : 'Send this page to Snag'
+    },
+    ignore
+  )
+  if (tab.active) chrome.contextMenus.update(MENU_TOGGLE, { checked: !off, enabled: !!host }, ignore)
+}
+
+async function syncActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+  if (tab) await syncSiteUi(tab)
+}
+
+async function setSiteShown(tab, shown) {
+  const host = hostOf(tab.url)
+  if (!host) return
+  const sites = (await disabledSiteList()).filter((h) => h !== host)
+  if (!shown) sites.push(host)
+  // Content scripts on this site react via chrome.storage.onChanged.
+  await chrome.storage.local.set({ disabledSites: sites })
+  const tabs = await chrome.tabs.query({})
+  await Promise.all(tabs.filter((t) => hostOf(t.url) === host).map(syncSiteUi))
+}
+
+function createMenus() {
   // Recreate deterministically on extension updates; existing IDs otherwise
   // make the onInstalled handler fail partway through.
   chrome.contextMenus.removeAll(() => {
@@ -353,13 +394,31 @@ chrome.runtime.onInstalled.addListener(() => {
       title: 'Download link with Snag',
       contexts: ['link']
     })
-    chrome.contextMenus.create({
-      id: MENU_TOGGLE,
-      title: 'Show/hide Snag button on this site',
-      contexts: ['page', 'video']
-    })
+    chrome.contextMenus.create({ id: 'snag-sep', type: 'separator', contexts: ['page', 'video'] })
+    chrome.contextMenus.create(
+      {
+        id: MENU_TOGGLE,
+        type: 'checkbox',
+        checked: true,
+        title: 'Show the Snag button on this site',
+        contexts: ['page', 'video']
+      },
+      () => void syncActiveTab()
+    )
+  })
+}
+
+chrome.runtime.onInstalled.addListener(createMenus)
+chrome.runtime.onStartup.addListener(() => void syncActiveTab())
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  chrome.tabs.get(tabId, (tab) => {
+    if (!chrome.runtime.lastError) void syncSiteUi(tab)
   })
 })
+chrome.tabs.onUpdated.addListener((_tabId, change, tab) => {
+  if (change.url || change.status === 'complete') void syncSiteUi(tab)
+})
+chrome.windows.onFocusChanged.addListener(() => void syncActiveTab())
 
 chrome.action.onClicked.addListener((tab) => {
   if (tab && tab.id != null) sendToSnag(tab.id, tab.url)
@@ -380,7 +439,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       sendToSnag(tab.id, info.linkUrl)
       break
     case MENU_TOGGLE:
-      toggleSite(tab)
+      // Chrome flips the checkbox itself; `checked` is the new state.
+      void setSiteShown(tab, info.checked !== false)
       break
   }
 })
