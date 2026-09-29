@@ -54,14 +54,18 @@ Chrome only installs extensions automatically when they come from the Web Store.
 >   builds still need a manual reload after source edits.
 > - Chrome may occasionally show a "disable developer mode extensions" notice
 >   at startup. It's dismissible and harmless.
-> - The button is translucent until hovered, is hidden in fullscreen, and sends
->   the **page or iframe URL**, not the video's often-useless `blob:` source.
->   Whether the page can be downloaded is decided by yt-dlp.
+> - The button is translucent until the pointer is over its video, is hidden in
+>   fullscreen, and sends the **page or iframe URL**, not the video's
+>   often-useless `blob:` source (on Reddit, the post's own URL). Whether the
+>   page can be downloaded is decided by yt-dlp.
 > - The overlay appears on normal, visible HTML video players at least 250 x 140
->   pixels. Browser-protected pages and players hidden inside closed shadow DOMs
->   cannot be modified by an extension. DRM, sandboxed frames, and site CSS may
->   also block the overlay or download. The toolbar and right-click actions are
->   fallbacks on those sites.
+>   pixels, including players built from web components that keep their video
+>   in an open or closed shadow root (Reddit). Browser-protected pages cannot be
+>   modified by an extension. DRM, sandboxed frames, and site CSS may also block
+>   the overlay or download. The toolbar and right-click actions are fallbacks
+>   on those sites.
+> - Download cards sit in the bottom-right corner, above or beside anything the
+>   page keeps fixed there (YouTube's miniplayer, a chat bubble).
 > - Per-site show/hide choices use `chrome.storage.local`; they stay in that
 >   browser profile and are not synced to a Google account.
 > - Works in Edge/Brave/other Chromium browsers the same way (`edge://extensions` etc.).

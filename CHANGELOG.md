@@ -3,6 +3,12 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.8.15 — 2026-09-29
+
+- Chrome extension: videos that sites build from web components now get the download tab too. On Reddit the tab appears on videos in the feed and on post pages, and downloads that post rather than the feed page. The panel shows the post's title and preview while it reads the video.
+- Chrome extension: download cards no longer cover YouTube's miniplayer, a chat bubble or anything else a page keeps in the bottom-right corner. They stack above it, or beside it when there is no room above, and move back to the corner once it is gone.
+- Chrome extension: YouTube's miniplayer gets the download tab again. YouTube no longer puts the video's link in the miniplayer, so the tab never appeared there. Once the miniplayer moves on to the next video in a queue or through autoplay, the tab stays hidden rather than risk downloading the previous one. The panel opened from the miniplayer or from a channel's featured video now shows that video's title right away instead of "YouTube".
+
 ## 1.8.14 — 2026-09-29
 
 - Chrome extension: the download button is now a tab attached to the video's top-right corner, following the player's rounded edge, instead of a circle floating over the picture. It is brighter while the pointer is over the video. When the player has its own buttons in that corner, the tab moves along the top edge next to them, or below them onto the right edge. Thumbnails get the same tab in their top-left corner.

@@ -112,8 +112,20 @@
       // The miniplayer and a channel's trailer play on feed and channel
       // pages; the player's own title link names the video.
       const player = video && video.closest && video.closest('.html5-video-player')
-      const titleLink = player && player.querySelector('a.ytp-title-link[href]')
-      return (titleLink && youtubeVideoUrl(titleLink.href)) || null
+      const titleLink = player && player.querySelector('a.ytp-title-link')
+      const fromTitle = titleLink && titleLink.getAttribute('href') && youtubeVideoUrl(titleLink.href)
+      if (fromTitle) return fromTitle
+      // YouTube's miniplayer leaves that link empty. The watch page it came
+      // from stays in the document, hidden, with its video ID, which is the
+      // video playing as long as the titles agree: from a queue or autoplay
+      // the miniplayer moves on to videos that page never showed.
+      const watch = document.querySelector('ytd-watch-flexy[video-id]')
+      const watchTitle = document.querySelector('ytd-watch-metadata #title')
+      const playing = titleLink && titleLink.textContent.trim()
+      if (watch && watchTitle && playing && playing === watchTitle.textContent.trim()) {
+        return youtubeVideoUrl('/watch?v=' + encodeURIComponent(watch.getAttribute('video-id')))
+      }
+      return null
     }
     if (/(^|\.)(x\.com|twitter\.com)$/i.test(HOST)) {
       const statusRe = /\/([A-Za-z0-9_]+)\/status\/(\d+)/
@@ -126,6 +138,23 @@
       }
       const m = location.pathname.match(statusRe)
       if (m) return `https://${HOST}/${m[1]}/status/${m[2]}`
+    }
+    // Reddit feeds: the post around the player names the post (new Reddit's
+    // shreddit-post, old Reddit's .thing carry its permalink). A video in no
+    // post, such as a promoted one in the feed, has nothing Snag can open;
+    // the feed URL itself is not a video.
+    if (/(^|\.)reddit\.com$/i.test(HOST)) {
+      for (let n = video, i = 0; n && i < 40; n = composedParent(n), i++) {
+        const permalink = (n.getAttribute && n.getAttribute('permalink')) || (n.dataset && n.dataset.permalink)
+        if (permalink) {
+          try {
+            return new URL(permalink, location.origin).href
+          } catch {
+            break
+          }
+        }
+      }
+      return /\/comments\//.test(location.pathname) ? location.href : null
     }
     return location.href
   }
@@ -141,6 +170,21 @@
     else {
       const og = document.querySelector('meta[property="og:image"], meta[name="twitter:image"]')
       if (og && og.content && /^https?:/i.test(og.content)) thumbnail = og.content
+    }
+    // Off the watch page (the miniplayer, a channel's trailer) the page title
+    // names the feed or channel; the player's own title names the video.
+    if (IS_YT && video && video.closest && !youtubeVideoUrl(location.href)) {
+      const player = video.closest('.html5-video-player')
+      const playing = player && player.querySelector('.ytp-title-link')
+      if (playing && playing.textContent.trim()) title = playing.textContent.trim()
+    }
+    // Reddit's player carries its post's title and poster image; the page
+    // title on a feed would name the subreddit instead.
+    const redditPlayer = video && /(^|\.)reddit\.com$/i.test(HOST) ? composedClosest(video, 'shreddit-player') : null
+    if (redditPlayer) {
+      title = redditPlayer.getAttribute('post-title') || title
+      const poster = redditPlayer.getAttribute('poster')
+      if (poster && /^https:/i.test(poster)) thumbnail = poster
     }
     if (window !== window.top && !thumbnail) title = ''
     return { title, thumbnail }
@@ -1231,6 +1275,127 @@
   const MINW = MIN_WIDTH
   const MINH = MIN_HEIGHT
 
+  // ---------- Videos inside shadow DOM (Reddit's shreddit-player) ----------
+
+  // A component's shadow root, open or closed (content scripts may read
+  // closed ones through chrome.dom).
+  function shadowRootOf(el) {
+    try {
+      if (chrome.dom && chrome.dom.openOrClosedShadowRoot) return chrome.dom.openOrClosedShadowRoot(el) || null
+    } catch {
+      /* not an element that can host a shadow root */
+    }
+    return el.shadowRoot || null
+  }
+
+  // Parent in the flattened tree: from the top of a shadow tree on to its host.
+  function composedParent(node) {
+    if (node.parentElement) return node.parentElement
+    const parent = node.parentNode
+    return parent && parent.host ? parent.host : null
+  }
+
+  // Node.contains and closest stop at shadow boundaries; players built from
+  // components do not.
+  function composedContains(ancestor, node) {
+    for (let n = node; n; n = n.parentNode || n.host) if (n === ancestor) return true
+    return false
+  }
+  function composedClosest(node, selector) {
+    for (let n = node, i = 0; n && i < 60; n = composedParent(n), i++) if (n.matches && n.matches(selector)) return n
+    return null
+  }
+
+  // Shadow roots that hold a <video>. The page-wide MutationObserver never
+  // sees inside shadow trees, so they are found by a walk. Every root the
+  // walk passes is watched: changes inside a player move its button, and an
+  // element added anywhere (a new post, a player putting in its <video>)
+  // calls for another walk.
+  const videoRoots = new Set()
+  const watchedRoots = new WeakSet()
+  let shadowScanAt = -Infinity
+  let shadowDirty = true
+  function addsElements(records) {
+    for (const record of records) for (const node of record.addedNodes) if (node.nodeType === 1) return true
+    return false
+  }
+  const rootObserver = new MutationObserver((records) => {
+    if (!shadowDirty && addsElements(records)) shadowDirty = true
+    for (const record of records) {
+      if (videoRoots.has(record.target.getRootNode())) {
+        schedule()
+        break
+      }
+    }
+  })
+
+  function scanShadowRoots() {
+    shadowScanAt = performance.now()
+    shadowDirty = false
+    videoRoots.clear()
+    const visit = (scope, depth) => {
+      for (const el of scope.querySelectorAll('*')) {
+        if (!el.localName.includes('-')) continue
+        const root = shadowRootOf(el)
+        if (!root) continue
+        if (!watchedRoots.has(root)) {
+          watchedRoots.add(root)
+          rootObserver.observe(root, { childList: true, subtree: true })
+        }
+        if (root.querySelector('video')) videoRoots.add(root)
+        if (depth < 3) visit(root, depth + 1)
+      }
+    }
+    visit(document, 0)
+  }
+
+  // A page built from components (Reddit) is walked again two seconds after
+  // elements were added; otherwise, and where the videos are ordinary
+  // elements, every ten seconds, which also catches components that attach
+  // their shadow root late.
+  function maybeScanShadowRoots() {
+    if (performance.now() - shadowScanAt < (shadowDirty && !liveVideos.length ? 2000 : 10000)) return
+    const before = videoRoots.size
+    scanShadowRoots()
+    if (videoRoots.size || before) schedule()
+  }
+
+  function collectVideos() {
+    const list = [...document.querySelectorAll('video')]
+    for (const root of videoRoots) {
+      if (root.host && root.host.isConnected) list.push(...root.querySelectorAll('video'))
+    }
+    return list
+  }
+
+  // What is under a point. document.elementsFromPoint stops at a shadow
+  // host; for video players it continues inside, so their <video> and their
+  // own controls are seen rather than just the host element.
+  function stackAt(x, y) {
+    let stack
+    try {
+      stack = document.elementsFromPoint(x, y)
+    } catch {
+      return []
+    }
+    return videoRoots.size ? expandStack(stack, x, y, 0) : stack
+  }
+
+  function expandStack(stack, x, y, depth) {
+    const out = []
+    for (const node of stack) {
+      if (depth < 4 && node.localName && node.localName.includes('-')) {
+        const root = shadowRootOf(node)
+        if (root && (videoRoots.has(root) || videoRoots.has(node.getRootNode()))) {
+          const inner = root.elementsFromPoint(x, y).filter((el) => el !== node && root.contains(el))
+          out.push(...expandStack(inner, x, y, depth + 1))
+        }
+      }
+      out.push(node)
+    }
+    return out
+  }
+
   function eligible(video) {
     if (disabled || document.fullscreenElement) return false
     if (!video.isConnected) return false
@@ -1261,12 +1426,12 @@
   // are in the way too, even when they are not buttons — as long as they
   // are actually showing.
   function badgeAt(node, video) {
-    if (!(node instanceof Element) || node === video || (video && node.contains(video))) return null
+    if (!(node instanceof Element) || node === video || (video && composedContains(node, video))) return null
     const r = node.getBoundingClientRect()
     if (r.width < 8 || r.height < 8 || r.width > MAX_CONTROL_SIZE || r.height > MAX_CONTROL_SIZE) return null
     if (!node.textContent.trim() && !/^(img|svg|canvas)$/i.test(node.tagName) && !node.querySelector('img, svg')) return null
-    for (let el = node, i = 0; el && i < 5; el = el.parentElement, i++) {
-      if (video && el.contains(video)) break
+    for (let el = node, i = 0; el && i < 5; el = composedParent(el), i++) {
+      if (video && composedContains(el, video)) break
       const style = getComputedStyle(el)
       if (style.visibility === 'hidden' || parseFloat(style.opacity) < 0.2) return null
     }
@@ -1274,20 +1439,14 @@
   }
 
   function controlAt(x, y, btn, video) {
-    let stack
-    try {
-      stack = document.elementsFromPoint(x, y)
-    } catch {
-      return null
-    }
-    for (const node of stack) {
+    for (const node of stackAt(x, y)) {
       if (node === btn || (node.dataset && node.dataset.snagPanel)) continue
       if (node.classList && node.classList.contains('snag-dl-btn')) continue
       if (node === video) return null
       const control = node.closest ? node.closest(CONTROL_SELECTOR) : null
       // A link wrapping the whole player is not a control in the way, but a
       // badge drawn inside it still is.
-      if (!control || (video && control.contains(video))) {
+      if (!control || (video && composedContains(control, video))) {
         const badge = badgeAt(node, video)
         if (badge) return badge
         if (control) return null
@@ -1313,7 +1472,7 @@
     let inset = 0
     for (const node of stack) {
       if (!(node instanceof Element) || node === document.documentElement || node === document.body) continue
-      if (node === video || (video && node.contains(video))) continue
+      if (node === video || (video && composedContains(node, video))) continue
       if (node.classList && node.classList.contains('snag-dl-btn')) continue
       if (node.dataset && node.dataset.snagPanel) continue
       const pos = getComputedStyle(node).position
@@ -1325,14 +1484,15 @@
   }
 
   // The element that holds a video together with its own overlay controls:
-  // YouTube's player box, elsewhere the outermost ancestor that is still
-  // about the video's size (controls sit inside it, next to the <video>).
+  // YouTube's player box (the whole miniplayer, whose resize strip runs
+  // along the picture's top edge), elsewhere the outermost ancestor that is
+  // still about the video's size (controls sit inside it, next to the <video>).
   function playerOf(video) {
-    const yt = video.closest('.html5-video-player')
+    const yt = video.closest('ytd-miniplayer') || video.closest('.html5-video-player')
     if (yt) return yt
     const v = video.getBoundingClientRect()
-    let box = video.parentElement || video
-    for (let node = video.parentElement, i = 0; node && i < 6; node = node.parentElement, i++) {
+    let box = composedParent(video) || video
+    for (let node = composedParent(video), i = 0; node && i < 6; node = composedParent(node), i++) {
       const r = node.getBoundingClientRect()
       if (r.width > v.width + 60 || r.height > v.height + 160) break
       box = node
@@ -1346,13 +1506,7 @@
     '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [aria-modal="true"], dialog, tp-yt-iron-dropdown, .ytp-popup, .ytp-contextmenu'
 
   function topmostPageElement(x, y) {
-    let stack
-    try {
-      stack = document.elementsFromPoint(x, y)
-    } catch {
-      return null
-    }
-    for (const node of stack) {
+    for (const node of stackAt(x, y)) {
       if (node.classList && node.classList.contains('snag-dl-btn')) continue
       if (node.dataset && node.dataset.snagPanel) continue
       return node
@@ -1367,18 +1521,27 @@
   // `owner` is the video (or thumbnail) the button belongs to: a dialog that
   // contains it (a lightbox showing the video) is not in the way; `belongs`
   // says whether an element is part of what the button sits on.
-  function coveredSpot(left, top, width, height, owner, belongs) {
-    const points = [
-      [left + width / 2, top + height / 2],
-      [left + 4, top + height - 4],
-      [left + width - 4, top + 4]
-    ]
+  // `outer` names the tab's corner that sits on the player's own (often
+  // rounded) corner: a point there can land beside the rounding, on the page
+  // behind it (Reddit's whole-card link), so it is not tested.
+  function coveredSpot(left, top, width, height, owner, belongs, outer) {
+    const center = [left + width / 2, top + height / 2]
+    const topLeft = [left + 4, top + 4]
+    const topRight = [left + width - 4, top + 4]
+    const bottomLeft = [left + 4, top + height - 4]
+    const bottomRight = [left + width - 4, top + height - 4]
+    const points =
+      outer === 'top-right'
+        ? [center, topLeft, bottomRight]
+        : outer === 'top-left'
+          ? [center, topRight, bottomLeft]
+          : [center, bottomLeft, topRight]
     for (const [x, y] of points) {
       if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue
       const node = topmostPageElement(x, y)
       if (!node) continue
-      const popup = node.closest ? node.closest(POPUP_SELECTOR) : null
-      if ((popup && !popup.contains(owner)) || !belongs(node)) return true
+      const popup = composedClosest(node, POPUP_SELECTOR)
+      if ((popup && !composedContains(popup, owner)) || !belongs(node)) return true
     }
     return false
   }
@@ -1386,7 +1549,7 @@
   // Corner radius of the player where the tab sits, so the tab's outer
   // corner follows the rounded edge instead of poking out of it.
   function cornerRadius(video, rect, corner) {
-    for (let node = video, i = 0; node && i < 8; node = node.parentElement, i++) {
+    for (let node = video, i = 0; node && i < 8; node = composedParent(node), i++) {
       const r = node.getBoundingClientRect()
       const alignedX = corner === 'right' ? Math.abs(r.right - rect.right) < 2 : Math.abs(r.left - rect.left) < 2
       if (!alignedX || Math.abs(r.top - rect.top) > 2) continue
@@ -1406,8 +1569,8 @@
     // A fixed player (a news site's floating mini player) is not clipped by
     // the page it floats above, only by its own frame.
     let escaped = getComputedStyle(video).position === 'fixed'
-    let node = video.parentElement
-    for (let i = 0; node && i < 8 && !escaped; i++, node = node.parentElement) {
+    let node = composedParent(video)
+    for (let i = 0; node && i < 8 && !escaped; i++, node = composedParent(node)) {
       const style = getComputedStyle(node)
       if (style.position === 'fixed') escaped = true
       if (style.overflowX === 'visible' && style.overflowY === 'visible' && style.clipPath === 'none') continue
@@ -1451,7 +1614,7 @@
   function obstacleRect(control, video) {
     const r = control.getBoundingClientRect()
     const parent = control.parentElement
-    if (!parent || parent.contains(video)) return r
+    if (!parent || composedContains(parent, video)) return r
     const p = parent.getBoundingClientRect()
     return p.width > r.width && p.width <= 480 && p.height <= r.height + 16 ? p : r
   }
@@ -1535,7 +1698,9 @@
     const top = Math.min(baseTop + place.dy, maxTop)
     const x = left + place.dx
     const player = playerOf(video)
-    if (coveredSpot(x, top, BTN_W, BTN_H, video, (node) => node === video || player.contains(node) || node.contains(video))) return false
+    const belongs = (node) => node === video || composedContains(player, node) || composedContains(node, video)
+    const outer = place.dx === 0 && place.dy === 0 ? 'top-right' : null
+    if (coveredSpot(x, top, BTN_W, BTN_H, video, belongs, outer)) return false
 
     btn.classList.toggle('snag-edge-top', place.dy === 0 && place.dx < 0)
     btn.classList.toggle('snag-edge-right', place.dy > 0)
@@ -1589,23 +1754,85 @@
   const CHECK = '<svg viewBox="0 0 24 24"><path d="m5 12 5 5L20 6"/></svg>'
 
   let toastList = null
+  let toastHost = null
   const toasts = new Map() // jobId -> { card, timer, done }
+  // Where the card stack sits, in page pixels from the window's bottom-right.
+  let toastOffset = { right: 16, bottom: 16 }
 
   function ensureToastList() {
     if (toastList && toastList.isConnected) return toastList
     const host = el('div', 'snag-toast-host')
     host.dataset.snagPanel = 'true'
-    host.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;pointer-events:none;zoom:' + uiScale() + ';'
+    host.style.cssText =
+      'position:fixed;right:16px;bottom:16px;z-index:2147483647;pointer-events:none;transition:right .25s ease,bottom .25s ease;'
     const shadow = host.attachShadow({ mode: 'closed' })
     const sheet = new CSSStyleSheet()
     sheet.replaceSync(TOAST_CSS)
     shadow.adoptedStyleSheets = [sheet]
     toastList = el('div', 'list')
     toastList.style.pointerEvents = 'auto'
+    // Scaled inside the host, so the host's offsets stay in page pixels.
+    toastList.style.zoom = String(uiScale())
     shadow.appendChild(toastList)
     document.documentElement.appendChild(host)
+    toastHost = host
+    toastOffset = { right: 16, bottom: 16 }
+    placeToasts()
     return toastList
   }
+
+  // Fixed widgets in the bottom-right corner (YouTube's miniplayer, chat
+  // bubbles, a cookie bar) that the cards would cover there.
+  function cornerWidgets(width, height) {
+    const found = new Set()
+    for (const fx of [0.15, 0.85]) {
+      for (const fy of [0.3, 0.85]) {
+        const x = innerWidth - 16 - width * (1 - fx)
+        const y = innerHeight - 16 - height * (1 - fy)
+        let stack = []
+        try {
+          stack = document.elementsFromPoint(x, y)
+        } catch {
+          /* point off screen */
+        }
+        const node = stack.find((n) => !(n.dataset && n.dataset.snagPanel) && !(n.classList && n.classList.contains('snag-dl-btn')))
+        for (let n = node, i = 0; n && n !== document.body && n !== document.documentElement && i < 12; n = composedParent(n), i++) {
+          if (getComputedStyle(n).position !== 'fixed') continue
+          const r = n.getBoundingClientRect()
+          // A fixed layer filling most of the window is a page wrapper or a
+          // modal, not a corner widget.
+          if (r.width < innerWidth * 0.6 || r.height < innerHeight * 0.6) found.add(n)
+          break
+        }
+      }
+    }
+    return [...found].map((n) => n.getBoundingClientRect())
+  }
+
+  // The cards leave such widgets their corner: they stack above them, or
+  // beside them when there is no room above.
+  function placeToasts() {
+    if (!toastHost || !toastHost.isConnected || !toastList) return
+    const scale = uiScale()
+    const box = toastList.getBoundingClientRect()
+    const width = Math.max(box.width, 300 * scale)
+    const height = Math.max(box.height, 56 * scale)
+    let right = 16
+    let bottom = 16
+    const widgets = cornerWidgets(width, height)
+    if (widgets.length) {
+      const top = Math.min(...widgets.map((r) => r.top))
+      const left = Math.min(...widgets.map((r) => r.left))
+      if (top - height - 12 >= 60) bottom = Math.round(innerHeight - top + 12)
+      else if (left - width - 12 >= 16) right = Math.round(innerWidth - left + 12)
+    }
+    if (right !== toastOffset.right || bottom !== toastOffset.bottom) {
+      toastOffset = { right, bottom }
+      toastHost.style.right = right + 'px'
+      toastHost.style.bottom = bottom + 'px'
+    }
+  }
+  addEventListener('resize', () => placeToasts(), { passive: true })
 
   // A short message card in the same corner as the download toasts.
   function showNotice(title, detail) {
@@ -1615,6 +1842,7 @@
     body.appendChild(el('div', 'note', detail))
     card.appendChild(body)
     ensureToastList().appendChild(card)
+    placeToasts()
     requestAnimationFrame(() => card.classList.add('in'))
     setTimeout(() => {
       card.classList.add('out')
@@ -1647,8 +1875,8 @@
     }
     document.documentElement.appendChild(ghost)
     const scale = uiScale()
-    const toX = innerWidth - (16 + 300 - 10) * scale
-    const toY = innerHeight - (16 + 50 - 9) * scale
+    const toX = innerWidth - toastOffset.right - (300 - 10) * scale
+    const toY = innerHeight - toastOffset.bottom - (50 - 9) * scale
     const dx = toX - from.left
     const dy = toY - from.top
     let finished = false
@@ -1714,6 +1942,7 @@
     x.setAttribute('aria-label', 'Cancel download')
     card.append(thumb, body, x)
     list.appendChild(card)
+    placeToasts()
 
     const entry = { card, timer: null, settled: false }
     toasts.set(jobId, entry)
@@ -1791,6 +2020,7 @@
       if (sizeText && moving) status.textContent += ' · ' + sizeText
       speed.textContent = job.speed || (moving ? '' : sizeText) || meta.label || ''
       eta.textContent = job.eta ? 'ETA ' + job.eta : ''
+      placeToasts()
       entry.timer = setTimeout(poll, 600)
     }
 
@@ -1879,7 +2109,7 @@
     if (r.width < 110 || r.height < 60 || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) return false
     const top = Math.max(r.top, fixedTopInset(r.left + THUMB_W / 2, null))
     if (top + THUMB_H > r.bottom - 4) return false
-    if (coveredSpot(r.left, top, THUMB_W, THUMB_H, thumbLink, () => true)) return false
+    if (coveredSpot(r.left, top, THUMB_W, THUMB_H, thumbLink, () => true, 'top-left')) return false
     thumbBtn.style.setProperty('--snag-corner', (top === r.top ? thumbRadius(thumbLink) : 0) + 'px')
     thumbBtn.style.left = r.left + 'px'
     thumbBtn.style.top = top + 'px'
@@ -1974,7 +2204,7 @@
     // Belt and braces for the scroll listener: a panel that has left the
     // screen (smooth scrolling, programmatic jumps) folds away on the heartbeat.
     if (panel && panelScrolledAway(panel.host)) closePanel()
-    const videos = document.querySelectorAll('video')
+    const videos = collectVideos()
     const currentVideos = new Set(videos)
     const seen = new Set()
     for (const video of videos) {
@@ -2049,7 +2279,7 @@
     if (scheduled) return
     // Frames without any video (live chat, ads, widgets) have nothing to
     // place; skip the work their constant DOM changes would trigger.
-    if (!liveVideos.length && !buttons.size && !thumbBtn && !panel) return
+    if (!liveVideos.length && !videoRoots.size && !buttons.size && !thumbBtn && !panel) return
     scheduled = true
     requestAnimationFrame(() => {
       scheduled = false
@@ -2102,7 +2332,10 @@
     }
   })
 
-  new MutationObserver(schedule).observe(document.documentElement, {
+  new MutationObserver((records) => {
+    if (!shadowDirty && addsElements(records)) shadowDirty = true
+    schedule()
+  }).observe(document.documentElement, {
     childList: true,
     subtree: true
   })
@@ -2112,13 +2345,15 @@
   // Layout can shift without DOM mutations (player resizes, lazy CSS) — cheap
   // heartbeat, but only on pages that actually have a video.
   setInterval(() => {
-    if (buttons.size || liveVideos.length) schedule()
+    if (document.visibilityState === 'visible') maybeScanShadowRoots()
+    if (buttons.size || liveVideos.length || videoRoots.size) schedule()
   }, 800)
 
   chrome.storage.local
     .get('disabledSites')
     .then(({ disabledSites = [] }) => {
       disabled = isDisabledHere(disabledSites)
+      maybeScanShadowRoots()
       schedule()
     })
     .catch(() => schedule())
