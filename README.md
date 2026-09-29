@@ -63,6 +63,27 @@ A fast, beautiful video & audio downloader for Windows — powered by
 <img src="docs/queue.png" width="850" alt="Download queue with live progress" />
 </div>
 
+## Convert local files
+
+Open **Convert**, or drop files from Explorer anywhere in Snag's main window.
+Choose **Audio** to extract sound (MP3 by default), or **Video** to change video
+format (MP4 by default), then click **Convert**. Multiple files run one at a time.
+
+- Audio: MP3, M4A (AAC), WAV, FLAC, OGG (Vorbis), Opus.
+- Video: MP4, MKV, MOV (H.264), WebM (VP9).
+- Results save beside each original, or in a folder you choose. The `- converted`
+  suffix and numbered duplicates prevent overwriting originals or earlier exports.
+- Conversion runs locally with FFmpeg. Progress, Cancel, Retry, Open, and Show in
+  folder are available in the Convert tab. Conversion history lasts for the current
+  app session; quitting cancels pending work. Completed files remain on disk.
+- Streams that already fit the format are repacked instead of re-encoded: an H.264
+  MKV (an OBS recording, say) becomes an MP4 in seconds without losing quality, and
+  AAC audio becomes M4A the same way. Everything else is re-encoded to H.264 (MP4,
+  MKV, MOV) or VP9 (WebM, which takes longer).
+- Videos keep every audio track; audio formats use the first one. Subtitles and
+  attachments are left out. Lossless audio formats cannot restore quality lost in a
+  compressed source.
+
 ## 📦 Install
 
 1. Grab the **Setup installer** (recommended — enables the browser handoff) or the

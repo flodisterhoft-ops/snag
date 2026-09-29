@@ -503,7 +503,7 @@ export function SettingsScreen(): JSX.Element {
             title="Download engine"
             desc={
               toolStatus?.aria2cFound
-                ? 'Built-in is the right choice for YouTube and most sites. aria2 opens many connections to one file, which only helps on sites that slow each connection down (Vimeo, X, direct links).'
+                ? 'Built-in is the right choice for YouTube and most sites. aria2 opens many connections to one file, which only helps on sites that slow each connection down (Vimeo, X, direct links). YouTube always uses Built-in, because it slows aria2 to a crawl.'
                 : 'Built-in is the right choice for YouTube and most sites. aria2 was not found on this PC.'
             }
           >
@@ -537,7 +537,7 @@ export function SettingsScreen(): JSX.Element {
           </Row>
           <Row
             title="Connection boost"
-            desc="How many pieces of one video are fetched at the same time. YouTube slows down every single connection, so Turbo or Max is what makes a fast line fast. Sites that hand out one plain file do not get faster."
+            desc="How many pieces of one video are fetched at the same time. Speeds up YouTube and streaming sites: Fast is plenty for most lines, Turbo or Max help on very fast ones. Sites that hand out one plain file only get faster with the aria2 engine. While a speed limit is on, the built-in engine fetches one piece at a time."
           >
             <div className="boost-control">
               <span className="lanes">
@@ -549,7 +549,7 @@ export function SettingsScreen(): JSX.Element {
                   { value: '1', label: 'Normal', hint: '1 connection' },
                   { value: '4', label: 'Fast', hint: '4 connections' },
                   { value: '8', label: 'Turbo', hint: '8 connections' },
-                  { value: '16', label: 'Max', hint: '16 connections (recommended for YouTube)' }
+                  { value: '16', label: 'Max', hint: '16 connections, for very fast lines' }
                 ]}
                 value={String(form.concurrentFragments)}
                 onChange={(v) => set({ concurrentFragments: Number(v) })}

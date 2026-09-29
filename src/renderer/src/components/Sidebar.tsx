@@ -3,8 +3,9 @@ import { useStore, View } from '../store'
 import { Icon } from './ui'
 import { AboutDialog } from './AboutDialog'
 
-const NAV: { view: View; icon: 'download' | 'queue' | 'settings'; label: string }[] = [
+const NAV: { view: View; icon: 'download' | 'queue' | 'settings' | 'convert'; label: string }[] = [
   { view: 'home', icon: 'download', label: 'Download' },
+  { view: 'convert', icon: 'convert', label: 'Convert' },
   { view: 'queue', icon: 'queue', label: 'Queue' },
   { view: 'settings', icon: 'settings', label: 'Settings' }
 ]

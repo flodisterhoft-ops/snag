@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import type { DownloadJob } from '../src/shared/types'
+import type { DownloadJob, ProgressUpdate } from '../src/shared/types'
 
 vi.mock('electron', () => ({ app: { getPath: () => 'C:\\SnagTest' } }))
 vi.mock('../src/main/notify', () => ({ notifyComplete: vi.fn(), notifyError: vi.fn() }))
@@ -147,11 +147,16 @@ describe('download queue persistence', () => {
     writeFileSync(file, JSON.stringify({ version: 1, jobs: [renamed] }))
 
     const manager = new DownloadManager()
+    const sent: ProgressUpdate[] = []
+    manager.on('progress', (u: ProgressUpdate) => sent.push(u))
     manager.initializePersistence(file, false)
 
     expect(manager.pruneMissingFiles()).toEqual([])
     expect(manager.getJob('renamed')?.filepath).toMatch(/Cats – Free Download\.mp4$/)
     expect(manager.getJob('renamed')?.sizeLabel).toBe('2.0 MB')
+    // An open window learns the real path, and it is saved.
+    expect(sent.find((u) => u.id === 'renamed')?.filepath).toMatch(/Cats – Free Download\.mp4$/)
+    expect(readFileSync(file, 'utf8')).toContain('Cats – Free Download.mp4')
   })
 })
 

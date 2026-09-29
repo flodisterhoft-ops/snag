@@ -3,6 +3,7 @@ import { useStore } from './store'
 import { Sidebar } from './components/Sidebar'
 import { Home } from './screens/Home'
 import { Queue } from './screens/Queue'
+import { Convert } from './screens/Convert'
 import { SettingsScreen } from './screens/Settings'
 import { QuickApp } from './screens/Quick'
 import { UpdateModal } from './components/UpdateModal'
@@ -53,9 +54,10 @@ export default function App(): JSX.Element {
           <Home />
         ) : view === 'queue' ? (
           <Queue />
-        ) : (
+        ) : view === 'settings' ? (
           <SettingsScreen />
-        )}
+        ) : null}
+        {ready && !startupError && <div hidden={view !== 'convert'}><Convert visible={view === 'convert'} /></div>}
       </main>
       <UpdateModal />
       <ExtensionOnboarding />

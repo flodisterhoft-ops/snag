@@ -26,7 +26,7 @@ import {
   reorderJobs as reorderJobList
 } from './jobState'
 
-export type View = 'home' | 'queue' | 'settings'
+export type View = 'home' | 'queue' | 'convert' | 'settings'
 
 // A single browser handoff. The seq distinguishes repeat handoffs of the same
 // URL so effect consumers keyed on it re-fire for every click.

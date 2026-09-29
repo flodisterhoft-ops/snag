@@ -3,6 +3,16 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.8.12 — 2026-09-29
+
+- New **Convert** tab: drop local videos or audio files anywhere in the main window, choose a format, and convert with the bundled FFmpeg. Audio formats: MP3, M4A, WAV, FLAC, OGG, and Opus. Video formats: MP4, MKV, MOV, and WebM.
+- Batch conversion includes progress, cancellation, retry, and buttons to open or locate results. Save beside each source or choose another folder. Originals and existing exports are preserved.
+- Files whose streams already fit the chosen format are repacked instead of re-encoded: an H.264 MKV from OBS becomes an MP4 in seconds with no quality loss, and AAC audio becomes M4A the same way. Converted videos keep every audio track, so multi-language downloads keep their dubs.
+- **Faster YouTube downloads.** YouTube videos now come down in several pieces at once, as set under Settings → Speed → Connection boost. Until now YouTube always used a single connection whatever the setting said. On a gigabit line a 4K video downloaded twice as fast (51 → 104 MB/s). If a piece keeps failing, the download now stops with an error instead of saving a file with a gap in it.
+- The aria2 engine is no longer used for YouTube, which slowed it down to 3–12 MB/s. YouTube uses the built-in engine; other sites still go through aria2 when it is selected.
+- Fix: the speed limit now holds on YouTube and streaming sites. Each parallel piece used to be limited on its own, so a 5 MB/s cap could run at 12 MB/s or more. While a limit is on, the built-in engine fetches one piece at a time.
+- Fix: **Show in folder** said "Failed to open path", and Play, Share, Open when done and Share when done found no file, for videos whose names contain characters such as ｜, – or non-Latin letters. yt-dlp was reporting file names in the Windows code page with those characters missing; Snag now has it report them in UTF-8. For downloads saved before this fix, Show in folder finds the renamed file or opens the folder it was saved in.
+
 ## 1.8.11 — 2026-09-03
 
 - Fix: a YouTube or other video page left open while Snag refreshed its Chrome extension no longer waits 40 seconds and incorrectly says the desktop app failed to start. The panel now explains that Snag was updated and offers a **Reload page** button; newly opened or refreshed pages continue connecting automatically.

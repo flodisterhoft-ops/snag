@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 import type {
   Api,
   DownloadRequest,
@@ -11,6 +11,12 @@ import type {
 } from '@shared/types'
 
 const api: Api = {
+  pickConversionFiles: () => ipcRenderer.invoke('pickConversionFiles'),
+  pathForFile: (file) => webUtils.getPathForFile(file),
+  convert: (request) => ipcRenderer.invoke('convert', request),
+  getConversions: () => ipcRenderer.invoke('getConversions'),
+  cancelConversion: (id) => ipcRenderer.invoke('cancelConversion', id),
+  clearConversions: () => ipcRenderer.invoke('clearConversions'),
   analyze: (url: string) => ipcRenderer.invoke('analyze', url),
   enqueue: (request: DownloadRequest) => ipcRenderer.invoke('enqueue', request),
   cancel: (jobId: string) => ipcRenderer.invoke('cancel', jobId),

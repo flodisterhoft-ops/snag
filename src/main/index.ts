@@ -15,6 +15,7 @@ import { createTray, setTrayActiveCount } from './tray'
 import { updateTaskbar } from './taskbar'
 import { loadSettings } from './settings'
 import { downloadManager } from './downloader'
+import { conversionManager } from './converter'
 import { checkForUpdates, shouldAutoCheck } from './updates'
 import { refreshInstalledBrowserExtension } from './extension'
 import { applyLaunchAtLogin, TRAY_START_FLAG } from './startup'
@@ -90,7 +91,7 @@ function maybeQuitWhenIdle(): void {
   if (
     !hasVisibleWindow() &&
     !loadSettings().runInBackground &&
-    !downloadManager.hasActiveWork()
+    !downloadManager.hasActiveWork() && !conversionManager.hasActiveWork()
   ) {
     app.quit()
   }
@@ -131,6 +132,7 @@ if (!gotLock) {
     registerIpc()
     createTray(() => ensureMainWindow())
     setWindowIdleProbe(maybeQuitWhenIdle)
+    conversionManager.onIdle = maybeQuitWhenIdle
     void startLocalApi()
     applyGlobalShortcut(loadSettings().globalShortcutEnabled)
     startClipboardWatcher()
@@ -220,11 +222,17 @@ if (!gotLock) {
 
   app.on('window-all-closed', () => {
     // Stay alive for tray mode or while downloads are still running.
-    if (!loadSettings().runInBackground && !downloadManager.hasActiveWork()) {
+    if (!loadSettings().runInBackground && !downloadManager.hasActiveWork() && !conversionManager.hasActiveWork()) {
       app.quit()
     }
   })
 
   app.on('before-quit', () => downloadManager.shutdown())
+  let conversionsStopped = false
+  app.on('before-quit', (event) => {
+    if (conversionsStopped || !conversionManager.hasActiveWork()) return
+    event.preventDefault()
+    void conversionManager.shutdown().finally(() => { conversionsStopped = true; app.quit() })
+  })
   app.on('will-quit', () => globalShortcut.unregisterAll())
 }

@@ -83,6 +83,41 @@ describe('buildDownloadArgs', () => {
       '--limit-rate',
       '25M'
     ])
+    // yt-dlp caps each fragment separately, so parallel fragments would
+    // multiply the cap.
+    expect(args).not.toContain('--concurrent-fragments')
+  })
+
+  it('has yt-dlp print UTF-8 so file names with any character are read back intact', () => {
+    const args = buildDownloadArgs(request, settings, { ffmpegLocation: null })
+    expect(args.slice(args.indexOf('--encoding'), args.indexOf('--encoding') + 2)).toEqual(['--encoding', 'utf-8'])
+  })
+
+  it('fetches YouTube streams as parallel fragments that must all arrive', () => {
+    const youtube = { ...request, url: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ' }
+    for (const req of [youtube, { ...youtube, videoFormatId: undefined, audioFormatId: undefined }, { ...youtube, kind: 'audio' as const }]) {
+      const args = buildDownloadArgs(req, settings, { ffmpegLocation: null })
+      expect(args[args.indexOf('--extractor-args') + 1]).toBe('youtube:player_client=web_embedded,default;formats=dashy')
+      expect(args).toContain('--abort-on-unavailable-fragments')
+    }
+    // The progressive stream has no exact size, which dashy results leave out.
+    const progressive = buildDownloadArgs({ ...youtube, videoFormatId: '18', audioFormatId: undefined }, settings, {
+      ffmpegLocation: null
+    })
+    expect(progressive[progressive.indexOf('--extractor-args') + 1]).toBe('youtube:player_client=web_embedded,default')
+    expect(progressive).not.toContain('--abort-on-unavailable-fragments')
+    // Other sites keep yt-dlp's usual handling of a missing HLS fragment.
+    const other = buildDownloadArgs(request, settings, { ffmpegLocation: null })
+    expect(other[other.indexOf('--extractor-args') + 1]).toBe('youtube:player_client=web_embedded,default')
+    expect(other).not.toContain('--abort-on-unavailable-fragments')
+  })
+
+  it('keeps YouTube on the built-in engine when aria2 is selected', () => {
+    const aria = { ...settings, downloadEngine: 'aria2' as const }
+    for (const url of ['https://www.youtube.com/watch?v=1', 'https://youtu.be/1', 'https://music.youtube.com/watch?v=1']) {
+      const args = buildDownloadArgs({ ...request, url }, aria, { ffmpegLocation: null, aria2cPath: 'C:/Snag/tools/aria2c.exe' })
+      expect(args).not.toContain('--downloader')
+    }
   })
 
   it('remuxes progressive downloads so the chosen container is honored', () => {

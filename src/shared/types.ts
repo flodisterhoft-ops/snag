@@ -431,6 +431,12 @@ export interface ToolStatus {
 
 // Bridge exposed on window.api (implemented in preload).
 export interface Api {
+  pickConversionFiles: () => Promise<string[]>
+  pathForFile: (file: File) => string
+  convert: (request: import('./conversion').ConversionRequest) => Promise<import('./conversion').ConversionJob[]>
+  getConversions: () => Promise<import('./conversion').ConversionJob[]>
+  cancelConversion: (id: string) => Promise<void>
+  clearConversions: () => Promise<void>
   analyze: (url: string) => Promise<AnalyzeResult>
   enqueue: (request: DownloadRequest) => Promise<DownloadJob>
   cancel: (jobId: string) => Promise<void>

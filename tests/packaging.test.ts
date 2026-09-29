@@ -9,7 +9,8 @@ describe('Windows packaging', () => {
     expect(metadata).toContain('...YOUTUBE_FAST_CLIENT_ARGS, url]')
     expect(metadata).toContain('return runYtdlpJson([...base, ...YOUTUBE_CLIENT_ARGS, url], ytdlpOverride)')
     // Downloads still request the wider set, so analyzed format IDs always exist.
-    expect(args).toContain('...YOUTUBE_CLIENT_ARGS,')
+    expect(args).toContain("const YOUTUBE_CLIENTS = 'youtube:player_client=web_embedded,default'")
+    expect(args).toContain('chunkedYoutube ? `${YOUTUBE_CLIENTS};formats=dashy` : YOUTUBE_CLIENTS,')
     expect(args).toContain("'--progress-template',")
   })
 

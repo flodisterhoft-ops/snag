@@ -6,19 +6,25 @@ export const PROGRESS_PREFIX = 'SNAGPROG|'
 
 // Emitted once per progress tick on stdout. Fields are pipe-separated and never
 // contain a pipe themselves (percent/speed/eta/size strings + playlist counters).
+// The size is the byte count as "<n>B": fragmented downloads only know an
+// estimated total while they run, so the stream's exact size stands in.
 export const PROGRESS_TEMPLATE =
   `download:${PROGRESS_PREFIX}` +
   '%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|' +
-  '%(progress._total_bytes_str)s|%(info.playlist_index)s|%(info.n_entries)s'
+  '%(progress.total_bytes,info.filesize&{}B|)s|%(info.playlist_index)s|%(info.n_entries)s'
+
+// Snag reads file names from yt-dlp's console lines. The yt-dlp.exe build
+// ignores PYTHONIOENCODING, prints in the Windows code page and drops what
+// that cannot hold ("｜" vanishes, "–" turns into a stray byte), so the path
+// Snag stored missed the real file. --encoding makes the output UTF-8.
+export const OUTPUT_ENCODING_ARGS = ['--encoding', 'utf-8'] as const
 
 // YouTube stopped serving dubbed audio tracks to yt-dlp's default player
 // clients (2026.01, android_vr fallback). The embedded web client still
 // returns every language track; "default" keeps the normal fallback chain
 // for videos that disallow embedding. Ignored by non-YouTube extractors.
-export const YOUTUBE_CLIENT_ARGS = [
-  '--extractor-args',
-  'youtube:player_client=web_embedded,default'
-] as const
+const YOUTUBE_CLIENTS = 'youtube:player_client=web_embedded,default'
+export const YOUTUBE_CLIENT_ARGS = ['--extractor-args', YOUTUBE_CLIENTS] as const
 
 // Analysis first tries the default clients alone: about a third faster than
 // the set above and, with current yt-dlp, the same formats and dubbed tracks
@@ -26,6 +32,19 @@ export const YOUTUBE_CLIENT_ARGS = [
 // and DRC audio variants). The wider set stays the fallback and is always
 // used for the download itself, so every analyzed format ID exists there.
 export const YOUTUBE_FAST_CLIENT_ARGS = ['--extractor-args', 'youtube:player_client=default'] as const
+
+export function isYouTubeUrl(url: string): boolean {
+  try {
+    return /(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/i.test(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
+// A video pick without audio is a muxed (progressive) stream.
+function isProgressivePick(req: DownloadRequest): boolean {
+  return req.kind === 'video' && !!req.videoFormatId && !req.audioFormatId && !req.audioFormatIds?.length
+}
 
 export interface BuildContext {
   ffmpegLocation: string | null
@@ -50,15 +69,30 @@ export function buildDownloadArgs(
   settings: Settings,
   ctx: BuildContext
 ): string[] {
+  const youtube = isYouTubeUrl(req.url)
+  // YouTube hands out every stream as one file, which the built-in engine
+  // fetches as consecutive 10 MiB requests over a single connection, so
+  // Connection boost never applied there. formats=dashy turns those requests
+  // into fragments fetched N at a time (measured 2026-09 on a gigabit line:
+  // a 4K stream went from 51 to 104 MB/s). yt-dlp leaves formats without an
+  // exact size out of dashy results, and YouTube's one progressive stream
+  // (format 18) has none, so a progressive pick keeps the plain request.
+  const chunkedYoutube = youtube && !isProgressivePick(req)
   const args: string[] = [
     '--newline',
     '--no-color',
     '--ignore-config',
     '--no-warnings',
-    ...YOUTUBE_CLIENT_ARGS,
+    ...OUTPUT_ENCODING_ARGS,
+    '--extractor-args',
+    chunkedYoutube ? `${YOUTUBE_CLIENTS};formats=dashy` : YOUTUBE_CLIENTS,
     '--progress-template',
     PROGRESS_TEMPLATE
   ]
+  // yt-dlp skips a fragment that keeps failing, which is harmless for a few
+  // seconds of HLS but leaves a hole inside a YouTube file. Fail instead;
+  // Retry starts over with fresh links.
+  if (chunkedYoutube) args.push('--abort-on-unavailable-fragments')
 
   if (ctx.nodeRuntimePath) {
     args.push('--no-js-runtimes', '--js-runtimes', `node:${ctx.nodeRuntimePath}`)
@@ -72,23 +106,28 @@ export function buildDownloadArgs(
     args.push('--ffmpeg-location', ctx.ffmpegLocation)
   }
 
-  if (settings.speedLimit.enabled && settings.speedLimit.value > 0) {
+  const limited = settings.speedLimit.enabled && settings.speedLimit.value > 0
+  if (limited) {
     args.push('--limit-rate', `${settings.speedLimit.value}${settings.speedLimit.unit}`)
   }
 
   // Parallel per-download connections; big speedup on fast lines since hosts
-  // throttle per connection. --limit-rate still caps the combined total.
+  // throttle per connection. yt-dlp applies --limit-rate to each fragment
+  // request on its own (4 fragments under a 5M cap ran at 12 MB/s), so a
+  // capped download fetches one fragment at a time.
   const frags = Math.max(1, Math.min(16, Math.round(settings.concurrentFragments || 1)))
-  if (frags > 1) {
+  if (frags > 1 && !limited) {
     args.push('--concurrent-fragments', String(frags))
   }
 
   // aria2 engine: plain http(s) files go through aria2c with the same
   // connection count. DASH fragments stay with yt-dlp's own downloader (it
   // already runs them in parallel and reports progress), as do HLS streams.
-  // yt-dlp forwards --limit-rate, headers, and cookies to aria2c itself; the
-  // progress bar is fed from aria2c's console readout (see downloader.ts).
-  if (settings.downloadEngine === 'aria2' && ctx.aria2cPath) {
+  // YouTube never goes to aria2c: it throttles aria2c's long range requests
+  // to under 1 MB/s per connection (3 MB/s with 4, 12 MB/s with 16).
+  // yt-dlp forwards --limit-rate as aria2c's overall cap, plus headers and
+  // cookies; the progress bar is fed from aria2c's console readout (see downloader.ts).
+  if (settings.downloadEngine === 'aria2' && ctx.aria2cPath && !youtube) {
     args.push('--downloader', `http:${ctx.aria2cPath}`)
     args.push('--downloader-args', `aria2c:-x${frags} -s${frags} -k1M --enable-color=false`)
   }

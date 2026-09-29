@@ -4,10 +4,12 @@ import { existsSync } from 'fs'
 import { analyzeCached, clearAnalysisCache } from './metadata'
 import { cookieArgs, cookieStatus, forgetCookies } from './cookies'
 import { applyGlobalShortcut, isGlobalShortcutRegistered } from './shortcuts'
-import { downloadManager } from './downloader'
+import { downloadManager, findRenamedFile } from './downloader'
+import { conversionManager } from './converter'
+import type { ConversionRequest } from '../shared/conversion'
 import { cleanupTelegramMediaPath, shareFile, shareInfo } from './share'
 import { openWithPlayer } from './player'
-import { basename, extname, join } from 'path'
+import { basename, dirname, extname, join } from 'path'
 import { loadSettings, saveSettings } from './settings'
 import { getToolStatus, updateYtdlp, resetToolCache } from './ytdlp'
 import {
@@ -85,6 +87,22 @@ function handleTrusted<Args extends unknown[], Result>(
 }
 
 export function registerIpc(): void {
+  handleTrusted('pickConversionFiles', async (event): Promise<string[]> => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const options: Electron.OpenDialogOptions = {
+      title: 'Choose video or audio files', properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Video and audio', extensions: ['mp4', 'mkv', 'mov', 'webm', 'avi', 'm4v', 'wmv', 'flv', 'mpeg', 'mpg', 'ts', 'mts', 'm2ts', 'mp3', 'm4a', 'wav', 'flac', 'ogg', 'opus', 'aac', 'wma', 'aiff'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    }
+    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+    return result.canceled ? [] : result.filePaths
+  })
+  handleTrusted('convert', (_event, request: ConversionRequest) => conversionManager.enqueue(request))
+  handleTrusted('getConversions', () => conversionManager.getJobs())
+  handleTrusted('cancelConversion', (_event, id: string) => conversionManager.cancel(id))
+  handleTrusted('clearConversions', () => conversionManager.clearFinished())
   downloadManager.on('progress', (u: ProgressUpdate) => broadcast('progress', u))
   downloadManager.on('added', (j: DownloadJob) => broadcast('jobAdded', j))
   downloadManager.on('reordered', (jobs: DownloadJob[]) => broadcast('jobsReordered', jobs))
@@ -273,7 +291,7 @@ export function registerIpc(): void {
     // dialog parented to something the user cannot see.
     const win = BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow()
     const opts: Electron.OpenDialogOptions = {
-      title: 'Choose download folder',
+      title: 'Choose a folder',
       properties: ['openDirectory', 'createDirectory']
     }
     if (current && existsSync(current)) opts.defaultPath = current
@@ -291,11 +309,15 @@ export function registerIpc(): void {
 
   handleTrusted('showInFolder', async (_e, target: string): Promise<string> => {
     if (!target) return 'No path was provided.'
-    if (existsSync(target)) {
-      shell.showItemInFolder(target)
+    const file = existsSync(target) ? target : findRenamedFile(target)
+    if (file) {
+      shell.showItemInFolder(file)
       return ''
     }
-    return shell.openPath(target)
+    // The file is gone, but the folder it was saved to is what was asked for.
+    const folder = dirname(target)
+    if (existsSync(folder)) return shell.openPath(folder)
+    return 'This file and the folder it was saved in no longer exist.'
   })
 
   handleTrusted('readClipboard', async (): Promise<string> => {

@@ -1,7 +1,7 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { languageLabel } from '@shared/languages'
-import { YOUTUBE_CLIENT_ARGS, YOUTUBE_FAST_CLIENT_ARGS } from './args'
+import { YOUTUBE_CLIENT_ARGS, YOUTUBE_FAST_CLIENT_ARGS, isYouTubeUrl } from './args'
 import { AnalysisCache } from './analysisCache'
 import {
   locateYtdlp,
@@ -412,14 +412,6 @@ export async function analyze(
     playlist,
     previewUrl: preview.url,
     previewHasAudio: preview.hasAudio
-  }
-}
-
-function isYouTubeUrl(url: string): boolean {
-  try {
-    return /(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/i.test(new URL(url).hostname)
-  } catch {
-    return false
   }
 }
 

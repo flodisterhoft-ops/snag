@@ -28,8 +28,24 @@ export type IconName =
   | 'play'
   | 'pause'
   | 'sun'
+  | 'convert'
+  | 'arrow'
 
 const PATHS: Record<IconName, ReactNode> = {
+  convert: (
+    <>
+      <path d="M4 8h13" />
+      <path d="m14 4 4 4-4 4" />
+      <path d="M20 16H7" />
+      <path d="m10 12-4 4 4 4" />
+    </>
+  ),
+  arrow: (
+    <>
+      <path d="M5 12h14" />
+      <path d="m13 6 6 6-6 6" />
+    </>
+  ),
   download: (
     <>
       <path d="M12 3v12" />
@@ -238,6 +254,8 @@ interface SegOption<T extends string> {
   hint?: string
   // Marks the option with a green star inside the button.
   recommended?: boolean
+  // Greyed out and not selectable; the hint still says why.
+  disabled?: boolean
 }
 
 // Hover/focus tooltip for a segmented option: a small bubble above the button,
@@ -286,8 +304,9 @@ export function Segmented<T extends string>({
           key={o.value}
           role="tab"
           aria-selected={value === o.value}
-          className={`seg-btn ${value === o.value ? 'active' : ''} ${o.recommended ? 'recommended' : ''}`}
-          onClick={() => onChange(o.value)}
+          aria-disabled={o.disabled || undefined}
+          className={`seg-btn ${value === o.value ? 'active' : ''} ${o.recommended ? 'recommended' : ''} ${o.disabled ? 'disabled' : ''}`}
+          onClick={() => !o.disabled && onChange(o.value)}
           onMouseEnter={(e) => show(o, e.currentTarget)}
           onMouseLeave={() => setTip(null)}
           onFocus={(e) => show(o, e.currentTarget)}

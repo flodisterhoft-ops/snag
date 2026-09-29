@@ -200,14 +200,14 @@ export class DownloadManager extends EventEmitter {
   }
 
   // Jobs finished before yt-dlp printed UTF-8 can point at names with lost
-  // characters; point them at the real file once.
+  // characters; point them at the real file once. Sent like any update so an
+  // open window stops using the old path and the fix is saved.
   private healFilePaths(): void {
     for (const job of this.jobs.values()) {
       if (job.status !== 'completed' || !job.filepath || existsSync(job.filepath)) continue
       const healed = findRenamedFile(job.filepath)
       if (healed) {
-        job.filepath = healed
-        job.sizeLabel = fileSizeLabel(healed) ?? job.sizeLabel
+        this.update(job.id, { filepath: healed, sizeLabel: fileSizeLabel(healed) ?? job.sizeLabel })
       }
     }
   }
@@ -580,7 +580,9 @@ export class DownloadManager extends EventEmitter {
       this.destinations.delete(job.id)
 
       if (code === 0) {
-        const path = finalPath || destinations[destinations.length - 1] || null
+        const reported = finalPath || destinations[destinations.length - 1] || null
+        // A name the console could not print faithfully still finds its file.
+        const path = reported && !existsSync(reported) ? (findRenamedFile(reported) ?? reported) : reported
         // Batch downloads were queued by URL only; the finished file names them.
         const request =
           path && job.request.title === job.request.url

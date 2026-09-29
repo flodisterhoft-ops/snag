@@ -4,6 +4,7 @@ import { join, delimiter, dirname } from 'path'
 import { execFileSync, spawn, type ChildProcess } from 'child_process'
 import type { ToolStatus } from '@shared/types'
 import { compareVersions } from './version'
+import { OUTPUT_ENCODING_ARGS } from './args'
 
 const isWin = process.platform === 'win32'
 const VERSION_TIMEOUT_MS = 5000
@@ -18,9 +19,8 @@ export function ytdlpRuntimeArgs(runtimePath: string = process.execPath): string
   return ['--no-js-runtimes', '--js-runtimes', `node:${runtimePath}`]
 }
 
-// yt-dlp is a Python program; with a pipe for stdout it would print in the
-// Windows code page, mangling en dashes and full-width characters in the
-// "[download] Destination:" lines Snag reads file names from. Force UTF-8.
+// The UTF-8 variables only reach a yt-dlp run from Python; the yt-dlp.exe
+// build ignores them and needs --encoding (OUTPUT_ENCODING_ARGS) instead.
 export function ytdlpChildEnv(
   baseEnv: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
@@ -325,7 +325,8 @@ export async function runYtdlpJson(
   try {
     const { stdout } = await execFileBounded(
       bin,
-      [...ytdlpRuntimeArgs(), ...args],
+      // UTF-8 keeps names in error messages intact; the JSON itself is ASCII.
+      [...ytdlpRuntimeArgs(), ...OUTPUT_ENCODING_ARGS, ...args],
       ANALYZE_TIMEOUT_MS,
       1024 * 1024 * 128, // metadata JSON can be large
       ytdlpChildEnv()
