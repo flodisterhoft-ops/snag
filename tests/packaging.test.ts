@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs'
 import { describe, expect, it } from 'vitest'
+import { compareVersions } from '../src/main/version'
 
 describe('Windows packaging', () => {
   it('analyzes YouTube with the fast client set first and keeps the wide set for downloads', () => {
@@ -24,6 +25,26 @@ describe('Windows packaging', () => {
     expect(builder).toContain('- aria2c.exe')
     expect(builder).toContain('- aria2-COPYING.txt')
     expect(readFileSync('build/tools/THIRD_PARTY_TOOLS.txt', 'utf8')).toContain('aria2 1.37.0')
+  })
+
+  it('pins yt-dlp 2026.10.21 or newer and downloads it and its notices from that release', () => {
+    // Older yt-dlp executables bundle a certifi that trusts the compromised
+    // emSign intermediates (GHSA-6q48-6c7w-9gw2), so they can be MITMed.
+    const manifest = JSON.parse(readFileSync('build/tools/TOOLS_MANIFEST.json', 'utf8')) as {
+      tools: { id: string; version: string; source: string; download: { url: string } }[]
+      supportFiles: { url: string; output: string }[]
+    }
+    const ytdlp = manifest.tools.find((t) => t.id === 'yt-dlp')
+    const version = ytdlp?.version ?? ''
+    expect(compareVersions(version, '2026.10.21')).toBeGreaterThanOrEqual(0)
+    // The version is only a label; the URLs decide which bytes ship.
+    expect(ytdlp?.source).toBe(`https://github.com/yt-dlp/yt-dlp/tree/${version}`)
+    expect(ytdlp?.download.url).toBe(`https://github.com/yt-dlp/yt-dlp/releases/download/${version}/yt-dlp.exe`)
+    expect(manifest.supportFiles.filter((f) => f.output.startsWith('yt-dlp-')).map((f) => f.url)).toEqual([
+      `https://raw.githubusercontent.com/yt-dlp/yt-dlp/${version}/LICENSE`,
+      `https://raw.githubusercontent.com/yt-dlp/yt-dlp/${version}/THIRD_PARTY_LICENSES.txt`
+    ])
+    expect(readFileSync('build/tools/THIRD_PARTY_TOOLS.txt', 'utf8')).toContain(`yt-dlp ${version}`)
   })
 
   it('ships the tray image and retains an application-icon fallback', () => {
