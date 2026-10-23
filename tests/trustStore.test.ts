@@ -1,15 +1,26 @@
 import { X509Certificate } from 'crypto'
 import { readFileSync } from 'fs'
+import type { Certificate } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   getCACertificates: vi.fn(),
-  setDefaultCACertificates: vi.fn()
+  setDefaultCACertificates: vi.fn(),
+  appOn: vi.fn(),
+  defaultSession: { setCertificateVerifyProc: vi.fn() }
 }))
 
-vi.mock('tls', async (importOriginal) => ({ ...(await importOriginal<typeof import('tls')>()), ...mocks }))
+vi.mock('tls', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('tls')>()),
+  getCACertificates: mocks.getCACertificates,
+  setDefaultCACertificates: mocks.setDefaultCACertificates
+}))
+vi.mock('electron', () => ({
+  app: { on: mocks.appOn, whenReady: () => Promise.resolve() },
+  session: { defaultSession: mocks.defaultSession }
+}))
 
-import { distrustCompromisedRoots, withoutDistrustedRoots } from '../src/main/trustStore'
+import { chainHasDistrustedCertificate, distrustCompromisedRoots, withoutDistrustedRoots } from '../src/main/trustStore'
 
 // The root whose eMudhra intermediates were compromised, as Electron 43.1.0's
 // Node bundles it.
@@ -36,12 +47,57 @@ async function bundledRoot(commonName: string): Promise<string> {
 
 const subjectOf = (pem: string): string => new X509Certificate(pem).subject
 
+// Chains as Chromium hands them to the verify proc: leaf first, then issuerCert.
+type Name = [commonName: string, organization: string]
+function chain(...names: Name[]): Certificate {
+  let issuerCert: Certificate | undefined
+  for (let i = names.length - 1; i >= 0; i--) {
+    const [cn, o] = names[i]
+    const [issuerCn, issuerO] = names[i + 1] ?? names[i]
+    const principal = (commonName: string, organization: string) => ({
+      commonName,
+      organizations: organization ? [organization] : [],
+      organizationUnits: [],
+      locality: '',
+      state: '',
+      country: ''
+    })
+    issuerCert = { subject: principal(cn, o), issuer: principal(issuerCn, issuerO), issuerCert } as unknown as Certificate
+  }
+  return issuerCert as Certificate
+}
+
+// The two forged test hosts' real chains. The intermediate's common name never
+// says eMudhra or emSign; only its organization does.
+const EMUDHRA_DIRECT = chain(
+  ['dv-g3b-emudhra.we-have-a-problem.com', ''],
+  ['EM DV TLS CA - G3B', 'eMudhra BV'],
+  ['emSign Root TLS CA - G3', 'eMudhra Technologies Limited'],
+  ['emSign ECC Root CA - G3', 'eMudhra Technologies Limited']
+)
+const EMUDHRA_VIA_AAA = chain(
+  ['dv-g3b-aaa-emudhra.we-have-a-problem.com', ''],
+  ['EM DV TLS CA - G3B', 'eMudhra BV'],
+  ['AAA Certificate Services', 'Comodo CA Limited']
+)
+const GITHUB = chain(
+  ['api.github.com', ''],
+  ['Sectigo ECC Domain Validation Secure Server CA', 'Sectigo Limited'],
+  ['USERTrust ECC Certification Authority', 'The USERTRUST Network']
+)
+// A site may be named after eMudhra; only the CAs above it matter.
+const EMUDHRA_SITE_ON_DIGICERT = chain(
+  ['www.emudhra.com', 'eMudhra Technologies Limited'],
+  ['DigiCert Global G2 TLS RSA SHA256 2020 CA1', 'DigiCert Inc'],
+  ['DigiCert Global Root G2', 'DigiCert Inc']
+)
+
 beforeEach(() => {
-  mocks.getCACertificates.mockReset()
-  mocks.setDefaultCACertificates.mockReset()
+  vi.clearAllMocks()
+  mocks.getCACertificates.mockReturnValue([])
 })
 
-describe('trust store', () => {
+describe('Node trust store', () => {
   it('drops every eMudhra and emSign root and keeps the others', async () => {
     const { getCACertificates } = await vi.importActual<typeof import('tls')>('tls')
     const kept = withoutDistrustedRoots([...getCACertificates('bundled'), EMSIGN_ECC_G3])
@@ -63,7 +119,6 @@ describe('trust store', () => {
 
   it('keeps Snag starting when Node rejects the list', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    mocks.getCACertificates.mockReturnValue([])
     mocks.setDefaultCACertificates.mockImplementation(() => {
       throw new Error('unsupported')
     })
@@ -75,7 +130,37 @@ describe('trust store', () => {
   it('runs before anything else in the main process', () => {
     const index = readFileSync('src/main/index.ts', 'utf8')
     const call = index.search(/^distrustCompromisedRoots\(\)\r?$/m)
-    expect(call).toBeGreaterThan(index.lastIndexOf("\nimport "))
+    expect(call).toBeGreaterThan(index.lastIndexOf('\nimport '))
     expect(call).toBeLessThan(index.indexOf('app.setAppUserModelId('))
+  })
+})
+
+describe('Chromium certificate guard', () => {
+  it('flags chains through an eMudhra CA, including the Sectigo cross-signed one', () => {
+    expect(chainHasDistrustedCertificate(EMUDHRA_DIRECT)).toBe(true)
+    expect(chainHasDistrustedCertificate(EMUDHRA_VIA_AAA)).toBe(true)
+    expect(chainHasDistrustedCertificate(GITHUB)).toBe(false)
+    expect(chainHasDistrustedCertificate(EMUDHRA_SITE_ON_DIGICERT)).toBe(false)
+    expect(chainHasDistrustedCertificate(undefined)).toBe(false)
+  })
+
+  it('guards the default session and every session created later, such as electron-updater’s', async () => {
+    distrustCompromisedRoots()
+    expect(mocks.appOn).toHaveBeenCalledWith('session-created', expect.any(Function))
+    const guard = mocks.appOn.mock.calls[0][1] as (ses: unknown) => void
+    const updaterSession = { setCertificateVerifyProc: vi.fn() }
+    guard(updaterSession)
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(mocks.defaultSession.setCertificateVerifyProc).toHaveBeenCalledTimes(1)
+
+    const verify = updaterSession.setCertificateVerifyProc.mock.calls[0][0]
+    const verdict = (certificate: Certificate, validatedCertificate: Certificate): number => {
+      const callback = vi.fn()
+      verify({ hostname: 'example.test', certificate, validatedCertificate }, callback)
+      return callback.mock.calls[0][0]
+    }
+    expect(verdict(EMUDHRA_VIA_AAA, EMUDHRA_VIA_AAA)).toBe(-2)
+    expect(verdict(GITHUB, EMUDHRA_DIRECT)).toBe(-2)
+    expect(verdict(GITHUB, GITHUB)).toBe(-3)
   })
 })

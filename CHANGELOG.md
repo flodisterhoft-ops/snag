@@ -5,7 +5,7 @@ inside Snag before an update is installed.
 
 ## 1.8.17 — 2026-10-23
 
-- Security: Snag's checks for new Snag and yt-dlp versions no longer trust eMudhra's emSign certificate authorities, some of whose keys were compromised, so an attacker on your network can no longer fake GitHub's answer. The Node.js built into Snag still trusted them, and Snag can't move to a fixed Node.js until Electron ships one.
+- Security: Snag no longer trusts eMudhra's emSign certificate authorities, some of whose keys were compromised. Until now an attacker on your network could have posed as GitHub to fake Snag's update check or hand Snag a fake update. The Node.js and Chromium built into Snag still trusted them, and Snag can't move to fixed versions until Electron ships them.
 
 ## 1.8.16 — 2026-10-23
 
