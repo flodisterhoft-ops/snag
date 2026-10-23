@@ -26,6 +26,10 @@ import { startClipboardWatcher } from './clipboardWatcher'
 import { updateYtdlp, resetToolCache } from './ytdlp'
 import { clearAnalysisCache } from './metadata'
 import { notifyInfo } from './notify'
+import { distrustCompromisedRoots } from './trustStore'
+
+// First, before any TLS connection can pick up the emSign roots.
+distrustCompromisedRoots()
 
 // Windows: needed for notifications to show the app identity/name correctly.
 if (process.platform === 'win32') {

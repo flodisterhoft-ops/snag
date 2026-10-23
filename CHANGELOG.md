@@ -3,6 +3,10 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.8.17 — 2026-10-23
+
+- Security: Snag's checks for new Snag and yt-dlp versions no longer trust eMudhra's emSign certificate authorities, some of whose keys were compromised, so an attacker on your network can no longer fake GitHub's answer. The Node.js built into Snag still trusted them, and Snag can't move to a fixed Node.js until Electron ships one.
+
 ## 1.8.16 — 2026-10-23
 
 - Security: Snag now includes yt-dlp 2026.10.21. Earlier versions bundled a yt-dlp that still trusted eMudhra's emSign certificate authority after some of its keys were compromised, so an attacker on your network could pose as YouTube or any other site and send yt-dlp altered data.
