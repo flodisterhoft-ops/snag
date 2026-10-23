@@ -5,9 +5,9 @@ Snag invokes these programs as separate command-line processes. They are not
 linked into Snag. Exact versions, immutable download URLs, archive hashes, and
 installed-file hashes are recorded in TOOLS_MANIFEST.json.
 
-yt-dlp 2026.07.04
+yt-dlp 2026.10.21
 -----------------
-Project and source: https://github.com/yt-dlp/yt-dlp/tree/2026.07.04
+Project and source: https://github.com/yt-dlp/yt-dlp/tree/2026.10.21
 Primary license: The Unlicense
 Bundled notices:
   yt-dlp-LICENSE.txt

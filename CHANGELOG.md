@@ -3,6 +3,10 @@
 Every published Snag update is recorded here. The same release notes are shown
 inside Snag before an update is installed.
 
+## 1.8.16 — 2026-10-23
+
+- Security: Snag now includes yt-dlp 2026.10.21. Earlier versions bundled a yt-dlp that still trusted eMudhra's emSign certificate authority after some of its keys were compromised, so an attacker on your network could pose as YouTube or any other site and send yt-dlp altered data.
+
 ## 1.8.15 — 2026-09-29
 
 - Chrome extension: videos that sites build from web components now get the download tab too. On Reddit the tab appears on videos in the feed and on post pages, and downloads that post rather than the feed page. The panel shows the post's title and preview while it reads the video.
